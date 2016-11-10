@@ -2,8 +2,8 @@ package main
 
 import(
 	"fmt"
-	irc "ircserver/ircdefs"
-	"ircserver/parser"
+	"irc"
+	"irc/parser"
 	"log"
 	"net"
 	"strings"

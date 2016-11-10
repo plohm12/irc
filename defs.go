@@ -1,4 +1,4 @@
-package ircdefs
+package irc
 
 const RPL_WELCOME string 			= "001"
 const RPL_YOURHOST string 			= "002"

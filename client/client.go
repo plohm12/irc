@@ -4,7 +4,7 @@ import(
 	"bufio"
 	//"bytes"
 	"fmt"
-	irc "ircserver/ircdefs"
+	"irc"
 	"log"
 	"net"
 	"os"
