@@ -1,7 +1,9 @@
 package main
 
 import(
+	"database/sql"
 	"fmt"
+	_ "github.com/go-sql-driver/mysql"
 	"irc"
 	"irc/parser"
 	"log"
@@ -11,6 +13,7 @@ import(
 )
 
 var(
+	db *sql.DB
 	password string = ""
 	nick string = ""
 	username string = ""
@@ -126,6 +129,19 @@ func serve(conn net.Conn) {
 
 // Program entry point
 func main() {
+	// Access the database that stores state information
+	db, err = sql.Open("mysql", "root:root@/irc")
+	if err != nil {
+		panic(err.Error())
+	}
+	defer db.Close()
+
+	// Test the connection
+	err = db.Ping()
+	if err != nil {
+		panic(err.Error())
+	}
+
 	// Listen for TCP connections on this address and port
 	ln, err := net.Listen("tcp", "127.0.0.1:8080")
 	if err != nil {
