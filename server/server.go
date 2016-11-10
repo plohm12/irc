@@ -105,32 +105,7 @@ func serve(conn net.Conn) {
 	defer conn.Close()
 	fmt.Println("A connection was opened.")
 
-	// Accept PASS registration message
-	// for {
-	// 	fmt.Println("Waiting for a PASS message...")
-	// 	if msg, err := p.Parse(); err != nil {
-	// 		log.Println(err)
-	// 		_, _ = conn.Write([]byte(irc.ERR_GENERAL))
-	// 	} else {
-	// 		parser.Print(msg)
-	// 		if strings.ToUpper(msg.Command) == "PASS" {
-	// 			if err := handlePass(msg); err != "" {
-	// 				conn.Write([]byte(err))
-	// 			} else {
-	// 				break;
-	// 			}
-	// 		}
-	// 	}
-	// }
-
-
-	// Accept NICK registration message
-
-
-	// Accept USER registration message
-
 	for {
-		//n, err := conn.Read(buf)
 		if msg, err := p.Parse(); err != nil {
 			log.Println(err)
 			_, _ = conn.Write([]byte(irc.ERR_GENERAL))
