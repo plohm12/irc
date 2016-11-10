@@ -34,9 +34,13 @@ func handleResponse(conn net.Conn) {
 	if read, _ := conn.Read(buf); read > 0 {
 		switch string(buf[:read]) {
 		case irc.ERR_NEEDMOREPARAMS:
-			fmt.Println("Need more params.")
+			fmt.Println("Not enough parameters.")
 		case irc.ERR_ALREADYREGISTRED:
-			fmt.Println("You've already registered a password.")
+			fmt.Println("Unauthorized command (already registered).")
+		case irc.ERR_NOTREGISTERED:
+			fmt.Println("You have not registered.")
+		case irc.ERR_NONICKNAMEGIVEN:
+			fmt.Println("You must specify your nickname.")
 		case irc.ERR_GENERAL:
 			fmt.Println("General error. Do you need HELP?")
 		default:
