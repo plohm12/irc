@@ -57,6 +57,20 @@ func handlePass(id int64, msg *parser.Message) (reply string) {
 
 func handleNick(id int64, msg *parser.Message) (reply string) {
 	reply = ""
+	var password string
+	var nickname string
+
+	err := db.QueryRow("SELECT password,nickname FROM users WHERE id=?", id).Scan(&password, &nickname)
+	if err == sql.ErrNoRows {
+		log.Printf("No user with that ID.")
+		reply = irc.ERR_GENERAL
+		return
+	} else if err != nil {
+		log.Printf(err)
+		reply = irc.ERR_GENERAL
+		return
+	}
+
 	if password == "" {
 		reply = irc.ERR_NOTREGISTERED
 		return
@@ -67,7 +81,11 @@ func handleNick(id int64, msg *parser.Message) (reply string) {
 	}
 	//TODO: check that nick fits spec
 	//TODO: check for collisions
-	nick = msg.Params.Others[0]
+	_, err = db.Exec("UPDATE users SET nickname=? WHERE id=?", msg.Params.Others[0], id)
+	if err != nil {
+		log.Printf(err)
+		reply = irc.ERR_GENERAL
+	}
 	return
 }
 
@@ -103,7 +121,8 @@ func handleUser(id int64, msg *parser.Message) (reply string) {
 	return
 }
 
-func handleQuit(id int64, msg *parser.Message) (string) {
+func handleQuit(id int64, msg *parser.Message) string {
+	// Remove this client's record from the database
 	_, err := db.Exec("DELETE FROM users WHERE id=?", id)
 	if err != nil {
 		log.Error(err)
@@ -116,7 +135,6 @@ func handleMessage(id int64, msg *parser.Message) (reply string) {
 	reply = ""
 	switch strings.ToUpper(msg.Command) {
 	case "QUIT":
-		// unregister this user's info
 		reply = handleQuit(id, msg)
 		//reply = irc.ERR_CONNCLOSED
 	case "PASS":
