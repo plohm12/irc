@@ -34,14 +34,16 @@ func handlePass(id int64, msg *parser.Message) (reply string) {
 	// Query database for password
 	err := db.QueryRow("SELECT password FROM users WHERE id=?", id).Scan(&password)
 	if err == sql.ErrNoRows {
-		log.Printf("No user with that ID.")
+		log.Println("No user with that ID.")
 		reply = irc.ERR_GENERAL
 		return
 	} else if err != nil {
-		log.Fatal(err)
+		log.Println(err)
 		reply = irc.ERR_GENERAL
 		return
 	}
+
+	fmt.Printf("Password value is \"%s\"\n", password)
 
 	if password != "" {
 		reply = irc.ERR_ALREADYREGISTRED
@@ -49,7 +51,7 @@ func handlePass(id int64, msg *parser.Message) (reply string) {
 	}
 	_, err = db.Exec("UPDATE users SET password=? WHERE id=?", password, id)
 	if err != nil {
-		log.Error(err)
+		log.Println(err)
 		reply = irc.ERR_GENERAL
 	}
 	return
@@ -62,11 +64,11 @@ func handleNick(id int64, msg *parser.Message) (reply string) {
 
 	err := db.QueryRow("SELECT password,nickname FROM users WHERE id=?", id).Scan(&password, &nickname)
 	if err == sql.ErrNoRows {
-		log.Printf("No user with that ID.")
+		log.Println("No user with that ID.")
 		reply = irc.ERR_GENERAL
 		return
 	} else if err != nil {
-		log.Printf(err)
+		log.Println(err)
 		reply = irc.ERR_GENERAL
 		return
 	}
@@ -83,7 +85,7 @@ func handleNick(id int64, msg *parser.Message) (reply string) {
 	//TODO: check for collisions
 	_, err = db.Exec("UPDATE users SET nickname=? WHERE id=?", msg.Params.Others[0], id)
 	if err != nil {
-		log.Printf(err)
+		log.Println(err)
 		reply = irc.ERR_GENERAL
 	}
 	return
@@ -91,10 +93,10 @@ func handleNick(id int64, msg *parser.Message) (reply string) {
 
 func handleUser(id int64, msg *parser.Message) (reply string) {
 	reply = ""
-	if password == "" || nick == "" {
-		reply = irc.ERR_NOTREGISTERED
-		return
-	}
+	// if password == "" || nick == "" {
+	// 	reply = irc.ERR_NOTREGISTERED
+	// 	return
+	// }
 	if msg.Params.Num < 4 {
 		reply = irc.ERR_NEEDMOREPARAMS
 		return
@@ -125,7 +127,7 @@ func handleQuit(id int64, msg *parser.Message) string {
 	// Remove this client's record from the database
 	_, err := db.Exec("DELETE FROM users WHERE id=?", id)
 	if err != nil {
-		log.Error(err)
+		log.Println(err)
 	}
 	return irc.ERR_CONNCLOSED
 }
@@ -156,13 +158,13 @@ func serve(conn net.Conn) {
 	fmt.Println("A connection was opened.")
 
 	// Create database record
-	dbResult, err := db.Exec("INSERT INTO users DEFAULT VALUES")
+	dbResult, err := db.Exec("INSERT INTO users () VALUES();")
 	if err != nil {
-		log.Error(err)
+		log.Println(err)
 	}
 	id, err := dbResult.LastInsertId()
 	if err != nil {
-		log.Error(err)
+		log.Println(err)
 	}
 
 	for {
@@ -187,6 +189,7 @@ func serve(conn net.Conn) {
 // Program entry point
 func main() {
 	// Access the database that stores state information
+	var err error
 	db, err = sql.Open("mysql", "root:root@/irc")
 	if err != nil {
 		panic(err.Error())
