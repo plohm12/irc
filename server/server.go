@@ -1,3 +1,5 @@
+//TODO: finish database stuff dummy!
+
 package main
 
 import(
@@ -14,28 +16,46 @@ import(
 
 var(
 	db *sql.DB
-	password string = ""
+	//password string = ""
 	nick string = ""
 	username string = ""
 	mode int = 0
 	realname string = ""
 )
 
-func handlePass(msg *parser.Message) (reply string) {
+func handlePass(id int64, msg *parser.Message) (reply string) {
+	var password string
 	reply = ""
-	if msg.Params.Num > 0 {
-		if password != "" {
-			reply = irc.ERR_ALREADYREGISTRED
-		} else {
-			password = msg.Params.Others[0]
-		}
-	} else {
+	if msg.Params.Num < 1 {
 		reply = irc.ERR_NEEDMOREPARAMS
+		return
+	}
+
+	// Query database for password
+	err := db.QueryRow("SELECT password FROM users WHERE id=?", id).Scan(&password)
+	if err == sql.ErrNoRows {
+		log.Printf("No user with that ID.")
+		reply = irc.ERR_GENERAL
+		return
+	} else if err != nil {
+		log.Fatal(err)
+		reply = irc.ERR_GENERAL
+		return
+	}
+
+	if password != "" {
+		reply = irc.ERR_ALREADYREGISTRED
+		return
+	}
+	_, err = db.Exec("UPDATE users SET password=? WHERE id=?", password, id)
+	if err != nil {
+		log.Error(err)
+		reply = irc.ERR_GENERAL
 	}
 	return
 }
 
-func handleNick(msg *parser.Message) (reply string) {
+func handleNick(id int64, msg *parser.Message) (reply string) {
 	reply = ""
 	if password == "" {
 		reply = irc.ERR_NOTREGISTERED
@@ -51,7 +71,7 @@ func handleNick(msg *parser.Message) (reply string) {
 	return
 }
 
-func handleUser(msg *parser.Message) (reply string) {
+func handleUser(id int64, msg *parser.Message) (reply string) {
 	reply = ""
 	if password == "" || nick == "" {
 		reply = irc.ERR_NOTREGISTERED
@@ -83,19 +103,28 @@ func handleUser(msg *parser.Message) (reply string) {
 	return
 }
 
+func handleQuit(id int64, msg *parser.Message) (string) {
+	_, err := db.Exec("DELETE FROM users WHERE id=?", id)
+	if err != nil {
+		log.Error(err)
+	}
+	return irc.ERR_CONNCLOSED
+}
+
 /* generic message handler */
-func handleMessage(msg *parser.Message) (reply string) {
+func handleMessage(id int64, msg *parser.Message) (reply string) {
 	reply = ""
 	switch strings.ToUpper(msg.Command) {
 	case "QUIT":
 		// unregister this user's info
-		reply = irc.ERR_CONNCLOSED
+		reply = handleQuit(id, msg)
+		//reply = irc.ERR_CONNCLOSED
 	case "PASS":
-		reply = handlePass(msg)
+		reply = handlePass(id, msg)
 	case "NICK":
-		reply = handleNick(msg)
+		reply = handleNick(id, msg)
 	case "USER":
-		//handle user
+		reply = handleUser(id, msg)
 	}
 	return
 }
@@ -108,6 +137,16 @@ func serve(conn net.Conn) {
 	defer conn.Close()
 	fmt.Println("A connection was opened.")
 
+	// Create database record
+	dbResult, err := db.Exec("INSERT INTO users DEFAULT VALUES")
+	if err != nil {
+		log.Error(err)
+	}
+	id, err := dbResult.LastInsertId()
+	if err != nil {
+		log.Error(err)
+	}
+
 	for {
 		if msg, err := p.Parse(); err != nil {
 			log.Println(err)
@@ -116,7 +155,7 @@ func serve(conn net.Conn) {
 			return
 		} else {
 			parser.Print(msg)
-			reply := handleMessage(msg)
+			reply := handleMessage(id, msg)
 			_, _ = conn.Write([]byte(reply))
 			if reply == irc.ERR_CONNCLOSED {
 				conn.Close()
