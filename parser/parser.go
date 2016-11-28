@@ -1,8 +1,9 @@
 //TODO: Rename nested tok/lit's so its less confusing
+//TODO: Add panic()'s for better error handling
 
 package parser
 
-import(
+import (
 	"bytes"
 	"fmt"
 	"io"
@@ -287,11 +288,11 @@ func (p *Parser) scanUser() (string, error) {
 }
 
 type Parser struct {
-	s *Scanner
+	s   *Scanner
 	buf struct {
-		tok Token	// last read token
-		lit string	// last read literal
-		n int		// buffer size (max = 1)
+		tok Token  // last read token
+		lit string // last read literal
+		n   int    // buffer size (max = 1)
 	}
 }
 

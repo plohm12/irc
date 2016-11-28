@@ -1,6 +1,6 @@
 package main
 
-import(
+import (
 	"bufio"
 	//"bytes"
 	"fmt"
@@ -12,8 +12,8 @@ import(
 	//"time"
 )
 
-var(
-	nick	string	=	"";
+var (
+	nick string = ""
 )
 
 func printWelcome() {
@@ -54,7 +54,7 @@ func main() {
 	printWelcome()
 
 	// Attempt to connect to the server address and port via TCP
-	conn, err := net.Dial("tcp", "127.0.0.1:8080")
+	conn, err := net.Dial(irc.PROTOCOL, irc.HOST_ADDRESS)
 	if err != nil {
 		log.Fatalln(err)
 	}

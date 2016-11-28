@@ -1,4 +1,5 @@
 //TODO: finish database stuff dummy!
+//TODO: fix return statement args so they are less confusing
 
 package main
 
@@ -200,7 +201,7 @@ func serve(conn net.Conn) {
 func main() {
 	// Access the database that stores state information
 	var err error
-	db, err = sql.Open("mysql", "root:root@/irc")
+	db, err = sql.Open(irc.DB_DRIVER, irc.DB_DATASOURCE)
 	if err != nil {
 		panic(err.Error())
 	}
@@ -213,7 +214,7 @@ func main() {
 	}
 
 	// Listen for TCP connections on this address and port
-	ln, err := net.Listen("tcp", "127.0.0.1:8080")
+	ln, err := net.Listen(irc.PROTOCOL, irc.HOST_ADDRESS)
 	if err != nil {
 		log.Fatalln(err)
 	}
