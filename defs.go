@@ -1,5 +1,8 @@
 package irc
 
+const BUFFER_SIZE int = 512
+const DEFAULT_USER string = "guest"
+
 /* Connection information */
 const PROTOCOL string = "tcp"
 const HOST_IP string = "127.0.0.1"
@@ -14,6 +17,7 @@ const DB_NAME string = "irc"
 const DB_DATASOURCE string = DB_USER + ":" + DB_PASS + "@/" + DB_NAME
 
 /* IRC Reply codes per RFC 2812 */
+const RPL_NOP string = "000" //nop
 const RPL_WELCOME string = "001"
 const RPL_YOURHOST string = "002"
 const RPL_CREATED string = "003"

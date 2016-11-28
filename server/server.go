@@ -1,5 +1,6 @@
 //TODO: finish database stuff dummy!
 //TODO: fix return statement args so they are less confusing
+//TODO: remove any leftover records when server terminates
 
 package main
 
