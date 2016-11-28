@@ -1,3 +1,6 @@
+//TODO: add better closure defer function
+//TODO: make client more user-friendly
+
 package main
 
 import (
@@ -18,7 +21,6 @@ var (
 
 func printWelcome() {
 	fmt.Println("Welcome to the Internet Relay Chat!")
-	fmt.Println("To register with a server, you must enter three messages: PASS, NICK, and USER.")
 	fmt.Println("For HELP, type \"help\".")
 	fmt.Println("To terminate your session, type \"quit\".")
 }
@@ -29,7 +31,6 @@ func printHelp() {
 
 func handleResponse(conn net.Conn) {
 	buf := make([]byte, 512)
-	//conn.SetReadDeadline(time.Now().Add(time.Second))
 
 	if read, _ := conn.Read(buf); read > 0 {
 		switch string(buf[:read]) {
