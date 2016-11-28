@@ -2,24 +2,24 @@
 
 package main
 
-import(
+import (
 	"database/sql"
 	"fmt"
-	_ "github.com/go-sql-driver/mysql"
 	"irc"
 	"irc/parser"
 	"log"
 	"net"
 	"strconv"
 	"strings"
+
+	_ "github.com/go-sql-driver/mysql"
 )
 
-var(
-	db *sql.DB
-	//password string = ""
-	nick string = ""
+var (
+	db       *sql.DB
+	nick     string = ""
 	username string = ""
-	mode int = 0
+	mode     int    = 0
 	realname string = ""
 )
 
@@ -43,13 +43,11 @@ func handlePass(id int64, msg *parser.Message) (reply string) {
 		return
 	}
 
-	fmt.Printf("Password value is \"%s\"\n", password)
-
 	if password != "" {
 		reply = irc.ERR_ALREADYREGISTRED
 		return
 	}
-	_, err = db.Exec("UPDATE users SET password=? WHERE id=?", password, id)
+	_, err = db.Exec("UPDATE users SET password=? WHERE id=?", msg.Params.Others[0], id)
 	if err != nil {
 		log.Println(err)
 		reply = irc.ERR_GENERAL
@@ -149,12 +147,23 @@ func handleMessage(id int64, msg *parser.Message) (reply string) {
 	return
 }
 
+func closeConnection(conn net.Conn, id int64) {
+	fmt.Println("Serve() ending for userid", id)
+	if r := recover(); r != nil {
+		fmt.Println("Recovered:", r)
+		_, _ = conn.Write([]byte(fmt.Sprintf("%v", r)))
+	}
+	_, err := db.Exec("DELETE FROM users WHERE id=?", id)
+	if err != nil {
+		log.Println(err)
+	}
+	conn.Close()
+}
+
 // Given a connection, read and print messages to console
 //TODO: after parsing message, check state info to determine if connection should stay open
 func serve(conn net.Conn) {
-	//buf := make([]byte, 512)
 	p := parser.NewParser(conn)
-	defer conn.Close()
 	fmt.Println("A connection was opened.")
 
 	// Create database record
@@ -166,6 +175,7 @@ func serve(conn net.Conn) {
 	if err != nil {
 		log.Println(err)
 	}
+	defer closeConnection(conn, id)
 
 	for {
 		if msg, err := p.Parse(); err != nil {
