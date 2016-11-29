@@ -1,5 +1,4 @@
-//TODO: finish database stuff dummy!
-//TODO: remove any leftover records when server terminates
+//TODO: remove any leftover records when server terminates?
 
 package main
 
@@ -24,6 +23,8 @@ var (
 	realname string = ""
 )
 
+// Handles PASS commands by updating the session record's password field.
+// Returns an empty string on success or the appropriate error reply.
 func handlePass(id int64, msg *parser.Message) string {
 	var password string
 	if msg.Params.Num < 1 {
@@ -51,6 +52,8 @@ func handlePass(id int64, msg *parser.Message) string {
 	return ""
 }
 
+// Handles NICK commands by updating the session record's nickname field.
+// Returns an empty string on success or the appropriate error reply.
 func handleNick(id int64, msg *parser.Message) string {
 	var password string
 	var nickname string
@@ -80,10 +83,23 @@ func handleNick(id int64, msg *parser.Message) string {
 	return ""
 }
 
+// Handles USER commands by updating session record with username and mode
+// (along with user's real name). Returns a welcome reply on success or the
+// appropriate error reply.
 func handleUser(id int64, msg *parser.Message) string {
-	// if password == "" || nick == "" {
-	// 	return irc.ERR_NOTREGISTERED
-	// }
+	var username string
+	var realname string
+	var mode int
+
+	err := db.QueryRow("SELECT username,realname FROM users WHERE id=?", id).Scan(&username, &realname)
+	if err == sql.ErrNoRows {
+		log.Println("No user with that ID.")
+		return irc.ERR_GENERAL
+	} else if err != nil {
+		log.Println(err)
+		return irc.ERR_GENERAL
+	}
+
 	if msg.Params.Num < 4 {
 		return irc.ERR_NEEDMOREPARAMS
 	}
@@ -92,25 +108,20 @@ func handleUser(id int64, msg *parser.Message) string {
 	}
 
 	//TODO: probably check that each field is safe
-	username = msg.Params.Others[0]
-	if m, err := strconv.Atoi(msg.Params.Others[1]); err != nil {
+	mode, err = strconv.Atoi(msg.Params.Others[1])
+	if err != nil {
 		log.Println(err)
-		username = ""
 		mode = 0
-		return irc.ERR_GENERAL
-	} else {
-		mode = m
 	}
-	// discard 3rd param; it is unused
-	realname = msg.Params.Others[3]
+	_, err = db.Exec("UPDATE users SET username=?,mode=?,realname=? WHERE id=?", msg.Params.Others[0], mode, msg.Params.Others[3], id)
 	return irc.RPL_WELCOME
 }
 
+// Handles QUIT commands by removing session record from database.
 func handleQuit(id int64, msg *parser.Message) string {
-	// Remove this client's record from the database
 	_, err := db.Exec("DELETE FROM users WHERE id=?", id)
 	if err != nil {
-		log.Println(err)
+		panic(err)
 	}
 	return irc.ERR_CONNCLOSED
 }
@@ -131,17 +142,19 @@ func handleMessage(id int64, msg *parser.Message) string {
 	return ""
 }
 
+// Handles session termination. Recovers from panicking within serve(). Deletes
+// session record from database before closing connection.
 func closeConnection(conn net.Conn, id int64) {
-	fmt.Println("Serve() ending for userid", id)
+	defer conn.Close()
+	fmt.Println("Terminating session", id)
 	if err := recover(); err != nil {
-		fmt.Println("Recovered:", err)
+		fmt.Println("Recovered and sending:", err)
 		_, _ = conn.Write([]byte(fmt.Sprintf("%v", err)))
 	}
 	_, err := db.Exec("DELETE FROM users WHERE id=?", id)
 	if err != nil {
-		log.Println(err)
+		panic(err)
 	}
-	conn.Close()
 }
 
 // Given a connection, read and print messages to console
@@ -153,11 +166,11 @@ func serve(conn net.Conn) {
 	// Create database record
 	dbResult, err := db.Exec("INSERT INTO users () VALUES();")
 	if err != nil {
-		log.Println(err)
+		panic(err)
 	}
 	id, err := dbResult.LastInsertId()
 	if err != nil {
-		log.Println(err)
+		panic(err)
 	}
 	defer closeConnection(conn, id)
 
@@ -185,27 +198,27 @@ func main() {
 	var err error
 	db, err = sql.Open(irc.DB_DRIVER, irc.DB_DATASOURCE)
 	if err != nil {
-		panic(err.Error())
+		panic(err)
 	}
 	defer db.Close()
 
 	// Test the connection
 	err = db.Ping()
 	if err != nil {
-		panic(err.Error())
+		panic(err)
 	}
 
 	// Listen for TCP connections on this address and port
 	ln, err := net.Listen(irc.NETWORK, irc.HOST_ADDRESS)
 	if err != nil {
-		log.Fatalln(err)
+		panic(err)
 	}
 
 	// Accept and serve each connection in a new goroutine
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
-			log.Fatalln(err)
+			panic(err)
 		}
 		go serve(conn)
 	}
