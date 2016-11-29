@@ -16,11 +16,7 @@ import (
 )
 
 var (
-	db       *sql.DB
-	nick     string = ""
-	username string = ""
-	mode     int    = 0
-	realname string = ""
+	db *sql.DB
 )
 
 // Handles PASS commands by updating the session record's password field.
