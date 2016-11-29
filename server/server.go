@@ -1,5 +1,4 @@
 //TODO: finish database stuff dummy!
-//TODO: fix return statement args so they are less confusing
 //TODO: remove any leftover records when server terminates
 
 package main
@@ -25,85 +24,71 @@ var (
 	realname string = ""
 )
 
-func handlePass(id int64, msg *parser.Message) (reply string) {
+func handlePass(id int64, msg *parser.Message) string {
 	var password string
-	reply = ""
 	if msg.Params.Num < 1 {
-		reply = irc.ERR_NEEDMOREPARAMS
-		return
+		return irc.ERR_NEEDMOREPARAMS
 	}
 
 	// Query database for password
 	err := db.QueryRow("SELECT password FROM users WHERE id=?", id).Scan(&password)
 	if err == sql.ErrNoRows {
 		log.Println("No user with that ID.")
-		reply = irc.ERR_GENERAL
-		return
+		return irc.ERR_GENERAL
 	} else if err != nil {
 		log.Println(err)
-		reply = irc.ERR_GENERAL
-		return
+		return irc.ERR_GENERAL
 	}
 
 	if password != "" {
-		reply = irc.ERR_ALREADYREGISTRED
-		return
+		return irc.ERR_ALREADYREGISTRED
 	}
 	_, err = db.Exec("UPDATE users SET password=? WHERE id=?", msg.Params.Others[0], id)
 	if err != nil {
 		log.Println(err)
-		reply = irc.ERR_GENERAL
+		return irc.ERR_GENERAL
 	}
-	return
+	return ""
 }
 
-func handleNick(id int64, msg *parser.Message) (reply string) {
-	reply = ""
+func handleNick(id int64, msg *parser.Message) string {
 	var password string
 	var nickname string
 
 	err := db.QueryRow("SELECT password,nickname FROM users WHERE id=?", id).Scan(&password, &nickname)
 	if err == sql.ErrNoRows {
 		log.Println("No user with that ID.")
-		reply = irc.ERR_GENERAL
-		return
+		return irc.ERR_GENERAL
 	} else if err != nil {
 		log.Println(err)
-		reply = irc.ERR_GENERAL
-		return
+		return irc.ERR_GENERAL
 	}
 
 	if password == "" {
-		reply = irc.ERR_NOTREGISTERED
-		return
+		return irc.ERR_NOTREGISTERED
 	}
 	if msg.Params.Num < 1 {
-		reply = irc.ERR_NONICKNAMEGIVEN
-		return
+		return irc.ERR_NONICKNAMEGIVEN
 	}
 	//TODO: check that nick fits spec
 	//TODO: check for collisions
 	_, err = db.Exec("UPDATE users SET nickname=? WHERE id=?", msg.Params.Others[0], id)
 	if err != nil {
 		log.Println(err)
-		reply = irc.ERR_GENERAL
+		return irc.ERR_GENERAL
 	}
-	return
+	return ""
 }
 
-func handleUser(id int64, msg *parser.Message) (reply string) {
-	reply = ""
+func handleUser(id int64, msg *parser.Message) string {
 	// if password == "" || nick == "" {
-	// 	reply = irc.ERR_NOTREGISTERED
-	// 	return
+	// 	return irc.ERR_NOTREGISTERED
 	// }
 	if msg.Params.Num < 4 {
-		reply = irc.ERR_NEEDMOREPARAMS
-		return
+		return irc.ERR_NEEDMOREPARAMS
 	}
 	if username != "" {
-		reply = irc.ERR_ALREADYREGISTRED
-		return
+		return irc.ERR_ALREADYREGISTRED
 	}
 
 	//TODO: probably check that each field is safe
@@ -112,15 +97,13 @@ func handleUser(id int64, msg *parser.Message) (reply string) {
 		log.Println(err)
 		username = ""
 		mode = 0
-		reply = irc.ERR_GENERAL
-		return
+		return irc.ERR_GENERAL
 	} else {
 		mode = m
 	}
 	// discard 3rd param; it is unused
 	realname = msg.Params.Others[3]
-	reply = irc.RPL_WELCOME
-	return
+	return irc.RPL_WELCOME
 }
 
 func handleQuit(id int64, msg *parser.Message) string {
@@ -133,20 +116,19 @@ func handleQuit(id int64, msg *parser.Message) string {
 }
 
 /* generic message handler */
-func handleMessage(id int64, msg *parser.Message) (reply string) {
-	reply = ""
+func handleMessage(id int64, msg *parser.Message) string {
 	switch strings.ToUpper(msg.Command) {
 	case "QUIT":
-		reply = handleQuit(id, msg)
-		//reply = irc.ERR_CONNCLOSED
+		return handleQuit(id, msg)
+		//return irc.ERR_CONNCLOSED
 	case "PASS":
-		reply = handlePass(id, msg)
+		return handlePass(id, msg)
 	case "NICK":
-		reply = handleNick(id, msg)
+		return handleNick(id, msg)
 	case "USER":
-		reply = handleUser(id, msg)
+		return handleUser(id, msg)
 	}
-	return
+	return ""
 }
 
 func closeConnection(conn net.Conn, id int64) {
