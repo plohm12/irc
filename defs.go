@@ -4,9 +4,9 @@ const BUFFER_SIZE int = 512
 const DEFAULT_USER string = "guest"
 
 /* Connection information */
-const PROTOCOL string = "tcp"
+const NETWORK string = "tcp"
 const HOST_IP string = "127.0.0.1"
-const HOST_PORT string = "8080"
+const HOST_PORT string = "6667"
 const HOST_ADDRESS string = HOST_IP + ":" + HOST_PORT
 
 /* Database information */

@@ -3,12 +3,14 @@
 //TODO: add parser
 //TODO: enumerate help messages
 //TODO: add golang channel for response handling
+//TODO: ensure input matches RFC specs
 
 package main
 
 import (
 	"bufio"
 	//"bytes"
+	"errors"
 	"fmt"
 	"irc"
 	"log"
@@ -29,15 +31,14 @@ var (
 
 func printWelcome() {
 	fmt.Println("Welcome to the Internet Relay Chat!")
-	fmt.Println("For HELP, type \"help\".")
-	fmt.Println("To terminate your session, type \"quit\".")
+	fmt.Println("For HELP, type \"help\" at any time.")
+	fmt.Println("To terminate your session, type \"quit\" at any time.")
 }
 
-func printHelp() {
-	fmt.Println("Enter: PASS [password]")
-}
-
+// Prompts the user for a session password, nickname, username, and real name.
+// Sends PASS, NICK, & USER messages to server to establish a session.
 func register() {
+	// Loop until password is set
 	for password == "" {
 		fmt.Print("Create a session password:\n> ")
 		s := getInput()
@@ -51,6 +52,7 @@ func register() {
 		//		}
 		password = s
 	}
+	// Loop until nickname is set
 	for nick == "" {
 		fmt.Print("Enter your nickname:\n> ")
 		s := getInput()
@@ -61,11 +63,12 @@ func register() {
 		// handle server response here
 		nick = s
 	}
+	// Loop until username is set
 	for {
-		fmt.Print("Enter your username:\n> ")
+		fmt.Print("Enter your username (optional):\n> ")
 		s := getInput()
 		if strings.ToUpper(s) == "HELP" {
-			continue
+			continue // only loops if user types help
 		}
 		if s == "" {
 			user = irc.DEFAULT_USER
@@ -74,6 +77,7 @@ func register() {
 		}
 		break
 	}
+	// Loop until realname is set
 	for realname == "" {
 		fmt.Print("Enter your real name:\n> ")
 		s := getInput()
@@ -114,6 +118,8 @@ func handleResponse() bool {
 	return true
 }
 
+// Scans a line of user input. Checks for and handles session termination.
+// Trailing CRLFs are removed. Returns the input as a string.
 func getInput() string {
 	buf, err := reader.ReadBytes('\n')
 	if err != nil {
@@ -129,12 +135,12 @@ func getInput() string {
 	return s
 }
 
-// Writes a message in IRC format to the server.
-// Command must be a string, and any following parameters may be of any type.
+// Writes a message in IRC format to the server. Command must be a string.
 // If a parameter contains a space, it will be separated into two parameters by
 // the server. The space(s) in a parameter may be preserved if it is the last
 // parameter by prepending a colon (":") to the parameter argument.
-func sendMsg(command string, a ...interface{}) {
+// Returns nil on success, error otherwise.
+func sendMsg(command string, a ...interface{}) error {
 	var buf []byte
 	buf = append(buf, []byte(command)...)
 	for _, val := range a {
@@ -146,12 +152,13 @@ func sendMsg(command string, a ...interface{}) {
 	fmt.Print(string(buf))
 
 	if len(buf) > irc.BUFFER_SIZE {
-		panic("Message too large")
+		return errors.New(fmt.Sprintf("Message exceeds size: %s", string(buf)))
 	}
 	_, err := conn.Write(buf)
 	if err != nil {
-		panic(err.Error())
+		return err
 	}
+	return nil
 }
 
 // Program entry point
@@ -160,11 +167,21 @@ func main() {
 	printWelcome()
 
 	// Attempt to connect to the server address and port via TCP
-	conn, err = net.Dial(irc.PROTOCOL, irc.HOST_ADDRESS)
+	conn, err = net.Dial(irc.NETWORK, irc.HOST_ADDRESS)
 	if err != nil {
 		log.Fatalln(err)
 	}
-	defer conn.Close()
+
+	defer func() {
+		if err := recover(); err != nil {
+			if err == "QUIT" {
+				sendMsg("QUIT")
+			} else {
+				fmt.Println("Recovered:", err)
+			}
+		}
+		conn.Close()
+	}()
 
 	// Create a byte reader for stdin
 	reader = bufio.NewReaderSize(os.Stdin, irc.BUFFER_SIZE)
@@ -172,26 +189,6 @@ func main() {
 
 	// Read a line of text, and write it to the server
 	for {
-		fmt.Printf("> ")
-		buf, err := reader.ReadBytes('\n')
-		if err != nil {
-			log.Fatalln(err)
-		}
-		s := strings.ToUpper(string(buf))
-		if s == "QUIT\r\n" || s == "QUIT\n" {
-			_, _ = conn.Write(buf)
-			nRead, _ := conn.Read(buf)
-			fmt.Printf("%s\n", buf[:nRead])
-			conn.Close()
-			return
-		} else if s == "HELP\r\n" || s == "HELP\n" {
-			printHelp()
-			continue
-		}
-		_, err = conn.Write(buf)
-		if err != nil {
-			log.Fatalln(err)
-		}
-		go handleResponse()
+
 	}
 }

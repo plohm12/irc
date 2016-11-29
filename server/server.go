@@ -151,9 +151,9 @@ func handleMessage(id int64, msg *parser.Message) (reply string) {
 
 func closeConnection(conn net.Conn, id int64) {
 	fmt.Println("Serve() ending for userid", id)
-	if r := recover(); r != nil {
-		fmt.Println("Recovered:", r)
-		_, _ = conn.Write([]byte(fmt.Sprintf("%v", r)))
+	if err := recover(); err != nil {
+		fmt.Println("Recovered:", err)
+		_, _ = conn.Write([]byte(fmt.Sprintf("%v", err)))
 	}
 	_, err := db.Exec("DELETE FROM users WHERE id=?", id)
 	if err != nil {
@@ -215,7 +215,7 @@ func main() {
 	}
 
 	// Listen for TCP connections on this address and port
-	ln, err := net.Listen(irc.PROTOCOL, irc.HOST_ADDRESS)
+	ln, err := net.Listen(irc.NETWORK, irc.HOST_ADDRESS)
 	if err != nil {
 		log.Fatalln(err)
 	}
