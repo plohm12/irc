@@ -152,7 +152,7 @@ func sendMsg(command string, a ...interface{}) error {
 	fmt.Print(string(buf))
 
 	if len(buf) > irc.BUFFER_SIZE {
-		return errors.New(fmt.Sprintf("Message exceeds size: %s", string(buf)))
+		return errors.New(fmt.Sprintf("Message length %v too big: %s", len(buf), string(buf)))
 	}
 	_, err := conn.Write(buf)
 	if err != nil {

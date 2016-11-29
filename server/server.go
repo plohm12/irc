@@ -191,7 +191,6 @@ func serve(conn net.Conn) {
 			_, _ = conn.Write([]byte(reply))
 			if reply == irc.ERR_CONNCLOSED {
 				conn.Close()
-				fmt.Println("A connection was closed.")
 				return
 			}
 		}
