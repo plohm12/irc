@@ -1,6 +1,4 @@
-//TODO: finish database stuff dummy!
-//TODO: fix return statement args so they are less confusing
-//TODO: remove any leftover records when server terminates
+//TODO: remove any leftover records when server terminates?
 
 package main
 
@@ -25,141 +23,138 @@ var (
 	realname string = ""
 )
 
-func handlePass(id int64, msg *parser.Message) (reply string) {
+// Handles PASS commands by updating the session record's password field.
+// Returns an empty string on success or the appropriate error reply.
+func handlePass(id int64, msg *parser.Message) string {
 	var password string
-	reply = ""
 	if msg.Params.Num < 1 {
-		reply = irc.ERR_NEEDMOREPARAMS
-		return
+		return irc.ERR_NEEDMOREPARAMS
 	}
 
 	// Query database for password
 	err := db.QueryRow("SELECT password FROM users WHERE id=?", id).Scan(&password)
 	if err == sql.ErrNoRows {
 		log.Println("No user with that ID.")
-		reply = irc.ERR_GENERAL
-		return
+		return irc.ERR_GENERAL
 	} else if err != nil {
 		log.Println(err)
-		reply = irc.ERR_GENERAL
-		return
+		return irc.ERR_GENERAL
 	}
 
 	if password != "" {
-		reply = irc.ERR_ALREADYREGISTRED
-		return
+		return irc.ERR_ALREADYREGISTRED
 	}
 	_, err = db.Exec("UPDATE users SET password=? WHERE id=?", msg.Params.Others[0], id)
 	if err != nil {
 		log.Println(err)
-		reply = irc.ERR_GENERAL
+		return irc.ERR_GENERAL
 	}
-	return
+	return ""
 }
 
-func handleNick(id int64, msg *parser.Message) (reply string) {
-	reply = ""
+// Handles NICK commands by updating the session record's nickname field.
+// Returns an empty string on success or the appropriate error reply.
+func handleNick(id int64, msg *parser.Message) string {
 	var password string
 	var nickname string
 
 	err := db.QueryRow("SELECT password,nickname FROM users WHERE id=?", id).Scan(&password, &nickname)
 	if err == sql.ErrNoRows {
 		log.Println("No user with that ID.")
-		reply = irc.ERR_GENERAL
-		return
+		return irc.ERR_GENERAL
 	} else if err != nil {
 		log.Println(err)
-		reply = irc.ERR_GENERAL
-		return
+		return irc.ERR_GENERAL
 	}
 
 	if password == "" {
-		reply = irc.ERR_NOTREGISTERED
-		return
+		return irc.ERR_NOTREGISTERED
 	}
 	if msg.Params.Num < 1 {
-		reply = irc.ERR_NONICKNAMEGIVEN
-		return
+		return irc.ERR_NONICKNAMEGIVEN
 	}
 	//TODO: check that nick fits spec
 	//TODO: check for collisions
 	_, err = db.Exec("UPDATE users SET nickname=? WHERE id=?", msg.Params.Others[0], id)
 	if err != nil {
 		log.Println(err)
-		reply = irc.ERR_GENERAL
+		return irc.ERR_GENERAL
 	}
-	return
+	return ""
 }
 
-func handleUser(id int64, msg *parser.Message) (reply string) {
-	reply = ""
-	// if password == "" || nick == "" {
-	// 	reply = irc.ERR_NOTREGISTERED
-	// 	return
-	// }
+// Handles USER commands by updating session record with username and mode
+// (along with user's real name). Returns a welcome reply on success or the
+// appropriate error reply.
+func handleUser(id int64, msg *parser.Message) string {
+	var username string
+	var realname string
+	var mode int
+
+	err := db.QueryRow("SELECT username,realname FROM users WHERE id=?", id).Scan(&username, &realname)
+	if err == sql.ErrNoRows {
+		log.Println("No user with that ID.")
+		return irc.ERR_GENERAL
+	} else if err != nil {
+		log.Println(err)
+		return irc.ERR_GENERAL
+	}
+
 	if msg.Params.Num < 4 {
-		reply = irc.ERR_NEEDMOREPARAMS
-		return
+		return irc.ERR_NEEDMOREPARAMS
 	}
 	if username != "" {
-		reply = irc.ERR_ALREADYREGISTRED
-		return
+		return irc.ERR_ALREADYREGISTRED
 	}
 
 	//TODO: probably check that each field is safe
-	username = msg.Params.Others[0]
-	if m, err := strconv.Atoi(msg.Params.Others[1]); err != nil {
-		log.Println(err)
-		username = ""
-		mode = 0
-		reply = irc.ERR_GENERAL
-		return
-	} else {
-		mode = m
-	}
-	// discard 3rd param; it is unused
-	realname = msg.Params.Others[3]
-	reply = irc.RPL_WELCOME
-	return
-}
-
-func handleQuit(id int64, msg *parser.Message) string {
-	// Remove this client's record from the database
-	_, err := db.Exec("DELETE FROM users WHERE id=?", id)
+	mode, err = strconv.Atoi(msg.Params.Others[1])
 	if err != nil {
 		log.Println(err)
+		mode = 0
+	}
+	_, err = db.Exec("UPDATE users SET username=?,mode=?,realname=? WHERE id=?", msg.Params.Others[0], mode, msg.Params.Others[3], id)
+	return irc.RPL_WELCOME
+}
+
+// Handles QUIT commands by removing session record from database.
+func handleQuit(id int64, msg *parser.Message) string {
+	_, err := db.Exec("DELETE FROM users WHERE id=?", id)
+	if err != nil {
+		panic(err)
 	}
 	return irc.ERR_CONNCLOSED
 }
 
 /* generic message handler */
-func handleMessage(id int64, msg *parser.Message) (reply string) {
-	reply = ""
+func handleMessage(id int64, msg *parser.Message) string {
 	switch strings.ToUpper(msg.Command) {
 	case "QUIT":
-		reply = handleQuit(id, msg)
-		//reply = irc.ERR_CONNCLOSED
+		return handleQuit(id, msg)
+		//return irc.ERR_CONNCLOSED
 	case "PASS":
-		reply = handlePass(id, msg)
+		return handlePass(id, msg)
 	case "NICK":
-		reply = handleNick(id, msg)
+		return handleNick(id, msg)
 	case "USER":
-		reply = handleUser(id, msg)
+		return handleUser(id, msg)
 	}
-	return
+	return ""
 }
 
+// Handles session termination. Recovers from panicking within serve(). Deletes
+// session record from database before closing connection.
 func closeConnection(conn net.Conn, id int64) {
-	fmt.Println("Serve() ending for userid", id)
+	defer conn.Close()
+	fmt.Println("Terminating session", id)
 	if err := recover(); err != nil {
-		fmt.Println("Recovered:", err)
+		fmt.Println("Recovered and sending:", err)
 		_, _ = conn.Write([]byte(fmt.Sprintf("%v", err)))
 	}
 	_, err := db.Exec("DELETE FROM users WHERE id=?", id)
 	if err != nil {
-		log.Println(err)
+		panic(err)
 	}
-	conn.Close()
 }
 
 // Given a connection, read and print messages to console
@@ -171,11 +166,11 @@ func serve(conn net.Conn) {
 	// Create database record
 	dbResult, err := db.Exec("INSERT INTO users () VALUES();")
 	if err != nil {
-		log.Println(err)
+		panic(err)
 	}
 	id, err := dbResult.LastInsertId()
 	if err != nil {
-		log.Println(err)
+		panic(err)
 	}
 	defer closeConnection(conn, id)
 
@@ -203,27 +198,27 @@ func main() {
 	var err error
 	db, err = sql.Open(irc.DB_DRIVER, irc.DB_DATASOURCE)
 	if err != nil {
-		panic(err.Error())
+		panic(err)
 	}
 	defer db.Close()
 
 	// Test the connection
 	err = db.Ping()
 	if err != nil {
-		panic(err.Error())
+		panic(err)
 	}
 
 	// Listen for TCP connections on this address and port
 	ln, err := net.Listen(irc.NETWORK, irc.HOST_ADDRESS)
 	if err != nil {
-		log.Fatalln(err)
+		panic(err)
 	}
 
 	// Accept and serve each connection in a new goroutine
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
-			log.Fatalln(err)
+			panic(err)
 		}
 		go serve(conn)
 	}
