@@ -1,4 +1,6 @@
 //TODO: finish database stuff dummy!
+//TODO: fix return statement args so they are less confusing
+//TODO: remove any leftover records when server terminates
 
 package main
 
@@ -149,9 +151,9 @@ func handleMessage(id int64, msg *parser.Message) (reply string) {
 
 func closeConnection(conn net.Conn, id int64) {
 	fmt.Println("Serve() ending for userid", id)
-	if r := recover(); r != nil {
-		fmt.Println("Recovered:", r)
-		_, _ = conn.Write([]byte(fmt.Sprintf("%v", r)))
+	if err := recover(); err != nil {
+		fmt.Println("Recovered:", err)
+		_, _ = conn.Write([]byte(fmt.Sprintf("%v", err)))
 	}
 	_, err := db.Exec("DELETE FROM users WHERE id=?", id)
 	if err != nil {
@@ -200,7 +202,7 @@ func serve(conn net.Conn) {
 func main() {
 	// Access the database that stores state information
 	var err error
-	db, err = sql.Open("mysql", "root:root@/irc")
+	db, err = sql.Open(irc.DB_DRIVER, irc.DB_DATASOURCE)
 	if err != nil {
 		panic(err.Error())
 	}
@@ -213,7 +215,7 @@ func main() {
 	}
 
 	// Listen for TCP connections on this address and port
-	ln, err := net.Listen("tcp", "127.0.0.1:8080")
+	ln, err := net.Listen(irc.NETWORK, irc.HOST_ADDRESS)
 	if err != nil {
 		log.Fatalln(err)
 	}
