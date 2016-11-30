@@ -131,7 +131,7 @@ func handleQuit(id int64, msg *parser.Message) string {
 func handlePrivMsg(id int64, msg *parser.Message) string {
 	var targetid int64
 	var buf []byte
-	err := db.QueryRow("SELECT id FROM users WHERE username=?", msg.Params.Others[0]).Scan(&targetid)
+	err := db.QueryRow("SELECT id FROM users WHERE nickname=?", msg.Params.Others[0]).Scan(&targetid)
 	if err == sql.ErrNoRows {
 		//log.Println("No user with that ID.")
 		return errors.New(irc.ERR_NOSUCHNICK + " " + msg.Params.Others[0]).Error()
