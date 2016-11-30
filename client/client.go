@@ -1,9 +1,5 @@
-//TODO: add better closure defer function
-//TODO: make client more user-friendly
-//TODO: add parser
-//TODO: enumerate help messages
-//TODO: add golang channel for response handling
-//TODO: ensure input matches RFC specs
+//TODO add parser
+//TODO enumerate help messages
 
 package main
 
@@ -27,12 +23,15 @@ var (
 	realname string = ""
 )
 
+// Prints initial usage information.
 func printWelcome() {
 	fmt.Println("Welcome to the Internet Relay Chat!")
 	fmt.Println("For HELP, type \"/help\" at any time.")
 	fmt.Println("To terminate your session, type \"/quit\" at any time.")
 }
 
+// Prints a generic help message. Eventually will provide customized help for
+// each command.
 func printHelp(topic string) {
 	switch topic {
 	default:
@@ -44,6 +43,7 @@ func printHelp(topic string) {
 	}
 }
 
+// Called when user tries a command that does not exist.
 func unrecognizedCommand(command string) {
 	fmt.Println("Unrecognized command:", strings.ToUpper(command))
 	fmt.Println("Do you need \"/help\"?")
@@ -103,6 +103,7 @@ func register() {
 	sendMsg("USER", user, 0, "*", ":"+realname)
 }
 
+// Currently not used.
 func handleResponse() bool {
 	buf := make([]byte, irc.BUFFER_SIZE)
 
@@ -149,14 +150,14 @@ func getInput() string {
 	return s
 }
 
+// Attempt to parse a command from the input, which must be escaped by "/".
+// Currently, commands are the only valid input.
 func getCommand(msg string) (command string, trailing string) {
 	var cmd []byte
 	var cmdlen int
-
 	if len(msg) == 0 {
 		return "", ""
 	}
-
 	if msg[0] == '/' {
 		cmdlen++
 		for _, v := range msg[1:] {
@@ -172,6 +173,7 @@ func getCommand(msg string) (command string, trailing string) {
 	return
 }
 
+// Examine the command to determine a course of action.
 func handle(command string, params string) error {
 	switch strings.ToUpper(command) {
 	case "HELP":
@@ -184,6 +186,7 @@ func handle(command string, params string) error {
 	return nil
 }
 
+// Prepares a private message and calls sendMsg() to send it to the server.
 func handlePrivMsg(params string) error {
 	var target []byte
 	var targetlen int
@@ -198,10 +201,10 @@ func handlePrivMsg(params string) error {
 	return sendMsg("PRIVMSG", string(target), ":"+params[targetlen:])
 }
 
-// Writes a message in IRC format to the server. Command must be a string.
-// If a parameter contains a space, it will be separated into two parameters by
-// the server. The space(s) in a parameter may be preserved if it is the last
-// parameter by prepending a colon (":") to the parameter argument.
+// Writes a message in IRC format to the server. Command must already be
+// determined. If a parameter contains a space, it will be separated into two
+// parameters by the server. The space(s) in a parameter may be preserved if it
+// is the last parameter by prepending a colon (":") to the parameter argument.
 // Returns nil on success, error otherwise.
 func sendMsg(command string, args ...interface{}) error {
 	var buf []byte
@@ -224,7 +227,9 @@ func sendMsg(command string, args ...interface{}) error {
 	return nil
 }
 
-func receiveMessages(msg chan<- string) {
+// Asyncrhonously waits for incoming messages from the server and pushes them to
+// the channel.
+func receiveMessages(received chan<- string) {
 	buf := make([]byte, irc.BUFFER_SIZE)
 	for {
 		numRead, err := conn.Read(buf)
@@ -232,7 +237,7 @@ func receiveMessages(msg chan<- string) {
 			panic(err)
 		}
 		if numRead > 0 {
-			msg <- string(buf[:numRead])
+			received <- string(buf[:numRead])
 		}
 	}
 }
@@ -248,8 +253,12 @@ func main() {
 		panic(err)
 	}
 
-	replies := make(chan string, 5)
+	// A buffered channel of messages sent from the server;
+	// previously "replies"
+	received := make(chan string, 5)
 
+	// Executes very last. This function recovers from panic() if necessary,
+	// and closes the connection.
 	defer func() {
 		if err := recover(); err != nil {
 			if err == "/Q" || err == "/QUIT" {
@@ -261,17 +270,18 @@ func main() {
 		conn.Close()
 	}()
 
-	go receiveMessages(replies)
+	go receiveMessages(received)
 
 	// Create a byte reader for stdin
 	reader = bufio.NewReaderSize(os.Stdin, irc.BUFFER_SIZE)
 	register()
 
-	// Read a line of text, and write it to the server
 	for {
+		// If a message is in the channel, handle it. Otherwise, prompt the user
+		// for input. This clunky handling will need to be modified.
 		select {
-		case reply := <-replies:
-			fmt.Print(reply)
+		case msg := <-received:
+			fmt.Print(msg)
 		default:
 			fmt.Print("> ")
 			input := getInput()
