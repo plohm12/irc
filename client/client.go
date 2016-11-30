@@ -9,11 +9,9 @@ package main
 
 import (
 	"bufio"
-	//"bytes"
 	"errors"
 	"fmt"
 	"irc"
-	"log"
 	"net"
 	"os"
 	"strings"
@@ -155,6 +153,10 @@ func getCommand(msg string) (command string, trailing string) {
 	var cmd []byte
 	var cmdlen int
 
+	if len(msg) == 0 {
+		return "", ""
+	}
+
 	if msg[0] == '/' {
 		cmdlen++
 		for _, v := range msg[1:] {
@@ -222,6 +224,19 @@ func sendMsg(command string, args ...interface{}) error {
 	return nil
 }
 
+func receiveMessages(conn net.Conn, msg chan<- string) {
+	buf := make([]byte, irc.BUFFER_SIZE)
+	for {
+		numRead, err := conn.Read(buf)
+		if err != nil {
+			panic(err)
+		}
+		if numRead > 0 {
+			msg <- string(buf[:numRead])
+		}
+	}
+}
+
 // Program entry point
 func main() {
 	var err error
@@ -230,8 +245,10 @@ func main() {
 	// Attempt to connect to the server address and port via TCP
 	conn, err = net.Dial(irc.NETWORK, irc.HOST_ADDRESS)
 	if err != nil {
-		log.Fatalln(err)
+		panic(err)
 	}
+
+	replies := make(chan string, 5)
 
 	defer func() {
 		if err := recover(); err != nil {
@@ -244,17 +261,24 @@ func main() {
 		conn.Close()
 	}()
 
+	go receiveMessages(conn, replies)
+
 	// Create a byte reader for stdin
 	reader = bufio.NewReaderSize(os.Stdin, irc.BUFFER_SIZE)
 	register()
 
 	// Read a line of text, and write it to the server
 	for {
-		fmt.Print("> ")
-		input := getInput()
-		command, params := getCommand(input)
-		if command != "" {
-			handle(command, params)
+		select {
+		case reply := <-replies:
+			fmt.Print(reply)
+		default:
+			fmt.Print("> ")
+			input := getInput()
+			command, params := getCommand(input)
+			if command != "" {
+				handle(command, params)
+			}
 		}
 	}
 }

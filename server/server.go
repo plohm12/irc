@@ -1,4 +1,6 @@
-//TODO: remove any leftover records when server terminates?
+//TODO remove any leftover records when server terminates?
+//TODO convert string returns to error returns
+//TODO implement goroutine channels
 
 package main
 
@@ -17,7 +19,9 @@ import (
 )
 
 var (
+	// Global database identifier
 	db *sql.DB
+	// Maps session IDs to network connections
 	sessions map[int64]net.Conn = make(map[int64]net.Conn)
 )
 
@@ -130,7 +134,7 @@ func handlePrivMsg(id int64, msg *parser.Message) string {
 	err := db.QueryRow("SELECT id FROM users WHERE username=?", msg.Params.Others[0]).Scan(&targetid)
 	if err == sql.ErrNoRows {
 		//log.Println("No user with that ID.")
-		return errors.New(irc.ERR_NOSUCHNICK + " " + msg.Params.Others[0])
+		return errors.New(irc.ERR_NOSUCHNICK + " " + msg.Params.Others[0]).Error()
 	} else if err != nil {
 		log.Println(err)
 		return irc.ERR_GENERAL
@@ -139,18 +143,17 @@ func handlePrivMsg(id int64, msg *parser.Message) string {
 	if msg.Params.Num < 2 {
 		return irc.ERR_NOTEXTTOSEND
 	}
-	
 	targetConn, ok := sessions[targetid]
 	if !ok {
 		return irc.ERR_NORECIPIENT
 	}
 	buf = append(buf, []byte(msg.Command)...)
 	for _, p := range msg.Params.Others {
-		buf = append(buf, []byte(" " + p)...)
+		buf = append(buf, []byte(" "+p)...)
 	}
 	buf = append(buf, []byte("\r\n")...)
+	fmt.Print(string(buf)) // debug
 	_, _ = targetConn.Write(buf)
-
 	return ""
 }
 
@@ -178,8 +181,8 @@ func closeConnection(conn net.Conn, id int64) {
 	defer conn.Close()
 	fmt.Println("Terminating session", id)
 	if err := recover(); err != nil {
-		fmt.Println("Recovered and sending:", err)
-		_, _ = conn.Write([]byte(fmt.Sprintf("%v", err)))
+		fmt.Println("Recovered:", err)
+		//_, _ = conn.Write([]byte(fmt.Sprintf("%v", err)))
 	}
 	_, err := db.Exec("DELETE FROM users WHERE id=?", id)
 	delete(sessions, id)
@@ -202,7 +205,7 @@ func serve(conn net.Conn) {
 	if err != nil {
 		panic(err)
 	}
-	map[id] = conn
+	sessions[id] = conn
 	fmt.Println("Created session", id)
 	defer closeConnection(conn, id)
 
