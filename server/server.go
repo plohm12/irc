@@ -122,6 +122,11 @@ func handleQuit(id int64, msg *parser.Message) string {
 	return irc.ERR_CONNCLOSED
 }
 
+func handlePrivMsg(id int64, msg *parser.Message) string {
+	fmt.Println("Hey we made it this far")
+	return ""
+}
+
 /* generic message handler */
 func handleMessage(id int64, msg *parser.Message) string {
 	switch strings.ToUpper(msg.Command) {
@@ -134,6 +139,8 @@ func handleMessage(id int64, msg *parser.Message) string {
 		return handleNick(id, msg)
 	case "USER":
 		return handleUser(id, msg)
+	case "PRIVMSG":
+		return handlePrivMsg(id, msg)
 	}
 	return ""
 }
@@ -170,16 +177,17 @@ func serve(conn net.Conn) {
 	fmt.Println("Created session", id)
 	defer closeConnection(conn, id)
 
+	// Repeatedly handle messages
 	for {
-		if msg, err := p.Parse(); err != nil {
+		msg, err := p.Parse()
+		if err != nil {
 			panic(err)
-		} else {
-			parser.Print(msg)
-			reply := handleMessage(id, msg)
-			_, _ = conn.Write([]byte(reply))
-			if reply == irc.ERR_CONNCLOSED {
-				return
-			}
+		}
+		parser.Print(msg) // debug
+		reply := handleMessage(id, msg)
+		_, _ = conn.Write([]byte(reply))
+		if reply == irc.ERR_CONNCLOSED {
+			return
 		}
 	}
 }
