@@ -4,6 +4,7 @@ package main
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"irc"
 	"irc/parser"
@@ -17,6 +18,7 @@ import (
 
 var (
 	db *sql.DB
+	sessions map[int64]net.Conn = make(map[int64]net.Conn)
 )
 
 // Handles PASS commands by updating the session record's password field.
@@ -123,12 +125,37 @@ func handleQuit(id int64, msg *parser.Message) string {
 }
 
 func handlePrivMsg(id int64, msg *parser.Message) string {
-	fmt.Println("Hey we made it this far")
+	var targetid int64
+	var buf []byte
+	err := db.QueryRow("SELECT id FROM users WHERE username=?", msg.Params.Others[0]).Scan(&targetid)
+	if err == sql.ErrNoRows {
+		//log.Println("No user with that ID.")
+		return errors.New(irc.ERR_NOSUCHNICK + " " + msg.Params.Others[0])
+	} else if err != nil {
+		log.Println(err)
+		return irc.ERR_GENERAL
+	}
+
+	if msg.Params.Num < 2 {
+		return irc.ERR_NOTEXTTOSEND
+	}
+	
+	targetConn, ok := sessions[targetid]
+	if !ok {
+		return irc.ERR_NORECIPIENT
+	}
+	buf = append(buf, []byte(msg.Command)...)
+	for _, p := range msg.Params.Others {
+		buf = append(buf, []byte(" " + p)...)
+	}
+	buf = append(buf, []byte("\r\n")...)
+	_, _ = targetConn.Write(buf)
+
 	return ""
 }
 
 /* generic message handler */
-func handleMessage(id int64, msg *parser.Message) string {
+func handle(id int64, msg *parser.Message) string {
 	switch strings.ToUpper(msg.Command) {
 	case "QUIT":
 		return handleQuit(id, msg)
@@ -155,6 +182,7 @@ func closeConnection(conn net.Conn, id int64) {
 		_, _ = conn.Write([]byte(fmt.Sprintf("%v", err)))
 	}
 	_, err := db.Exec("DELETE FROM users WHERE id=?", id)
+	delete(sessions, id)
 	if err != nil {
 		panic(err)
 	}
@@ -174,6 +202,7 @@ func serve(conn net.Conn) {
 	if err != nil {
 		panic(err)
 	}
+	map[id] = conn
 	fmt.Println("Created session", id)
 	defer closeConnection(conn, id)
 
@@ -184,7 +213,7 @@ func serve(conn net.Conn) {
 			panic(err)
 		}
 		parser.Print(msg) // debug
-		reply := handleMessage(id, msg)
+		reply := handle(id, msg)
 		_, _ = conn.Write([]byte(reply))
 		if reply == irc.ERR_CONNCLOSED {
 			return

@@ -170,7 +170,7 @@ func getCommand(msg string) (command string, trailing string) {
 	return
 }
 
-func handleCommand(command string, params string) error {
+func handle(command string, params string) error {
 	switch strings.ToUpper(command) {
 	case "HELP":
 		printHelp(params)
@@ -254,7 +254,7 @@ func main() {
 		input := getInput()
 		command, params := getCommand(input)
 		if command != "" {
-			handleCommand(command, params)
+			handle(command, params)
 		}
 	}
 }
