@@ -224,7 +224,7 @@ func sendMsg(command string, args ...interface{}) error {
 	return nil
 }
 
-func receiveMessages(conn net.Conn, msg chan<- string) {
+func receiveMessages(msg chan<- string) {
 	buf := make([]byte, irc.BUFFER_SIZE)
 	for {
 		numRead, err := conn.Read(buf)
@@ -261,7 +261,7 @@ func main() {
 		conn.Close()
 	}()
 
-	go receiveMessages(conn, replies)
+	go receiveMessages(replies)
 
 	// Create a byte reader for stdin
 	reader = bufio.NewReaderSize(os.Stdin, irc.BUFFER_SIZE)
