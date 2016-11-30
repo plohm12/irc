@@ -12,7 +12,7 @@ import (
 func (p *Parser) Parse() (*Message, error) {
 	msg := &Message{}
 
-	fmt.Println("Begin parsing a message")
+	fmt.Println("Parsing...")
 
 	// Check for message prefix
 	if tok, _ := p.scan(); tok == COLON {

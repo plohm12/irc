@@ -157,7 +157,6 @@ func closeConnection(conn net.Conn, id int64) {
 //TODO: after parsing message, check state info to determine if connection should stay open
 func serve(conn net.Conn) {
 	p := parser.NewParser(conn)
-	fmt.Println("A connection was opened.")
 
 	// Create database record
 	dbResult, err := db.Exec("INSERT INTO users () VALUES();")
@@ -168,6 +167,7 @@ func serve(conn net.Conn) {
 	if err != nil {
 		panic(err)
 	}
+	fmt.Println("Created session", id)
 	defer closeConnection(conn, id)
 
 	for {
