@@ -172,16 +172,12 @@ func serve(conn net.Conn) {
 
 	for {
 		if msg, err := p.Parse(); err != nil {
-			log.Println(err)
-			_, _ = conn.Write([]byte(irc.ERR_GENERAL))
-			conn.Close()
-			return
+			panic(err)
 		} else {
 			parser.Print(msg)
 			reply := handleMessage(id, msg)
 			_, _ = conn.Write([]byte(reply))
 			if reply == irc.ERR_CONNCLOSED {
-				conn.Close()
 				return
 			}
 		}
