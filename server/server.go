@@ -18,11 +18,18 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 )
 
+// Contains unique ID, network connection, and receiving channel
+type session struct {
+	id      int64
+	conn    net.Conn
+	receive chan string
+}
+
 var (
 	// Global database identifier
 	db *sql.DB
-	// Maps session IDs to network connections
-	sessions map[int64]net.Conn = make(map[int64]net.Conn)
+	// Maps session IDs to session struct
+	sessions map[int64]session = make(map[int64]session)
 )
 
 // Handles PASS commands by updating the session record's password field.
@@ -143,7 +150,7 @@ func handlePrivMsg(id int64, msg *parser.Message) string {
 	if msg.Params.Num < 2 {
 		return irc.ERR_NOTEXTTOSEND
 	}
-	targetConn, ok := sessions[targetid]
+	targetSession, ok := sessions[targetid]
 	if !ok {
 		return irc.ERR_NORECIPIENT
 	}
@@ -153,7 +160,7 @@ func handlePrivMsg(id int64, msg *parser.Message) string {
 	}
 	buf = append(buf, []byte("\r\n")...)
 	fmt.Print(string(buf)) // debug
-	_, _ = targetConn.Write(buf)
+	_, _ = targetSession.conn.Write(buf)
 	return ""
 }
 
@@ -205,7 +212,7 @@ func serve(conn net.Conn) {
 	if err != nil {
 		panic(err)
 	}
-	sessions[id] = conn
+	sessions[id] = session{id, conn, make(chan string, irc.CHAN_BUF_SIZE)}
 	fmt.Println("Created session", id)
 	defer closeConnection(conn, id)
 

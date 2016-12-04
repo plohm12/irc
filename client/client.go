@@ -255,7 +255,7 @@ func main() {
 
 	// A buffered channel of messages sent from the server;
 	// previously "replies"
-	received := make(chan string, 5)
+	received := make(chan string, irc.CHAN_BUF_SIZE)
 
 	// Executes very last. This function recovers from panic() if necessary,
 	// and closes the connection.
