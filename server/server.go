@@ -19,7 +19,7 @@ import (
 )
 
 // Contains unique ID, network connection, and receiving channel
-type session struct {
+type Session struct {
 	id      int64
 	conn    net.Conn
 	receive chan string
@@ -28,178 +28,189 @@ type session struct {
 var (
 	// Global database identifier
 	db *sql.DB
-	// Maps session IDs to session struct
-	sessions map[int64]session = make(map[int64]session)
+	// Maps session IDs to Session struct
+	sessions map[int64]*Session = make(map[int64]*Session)
 )
 
 // Handles PASS commands by updating the session record's password field.
 // Returns an empty string on success or the appropriate error reply.
-func handlePass(id int64, msg *parser.Message) string {
+func (s *Session) handlePass(msg *parser.Message) {
 	var password string
 	if msg.Params.Num < 1 {
-		return irc.ERR_NEEDMOREPARAMS
+		s.receive <- irc.ERR_NEEDMOREPARAMS + irc.CRLF
+		return
 	}
 
 	// Query database for password
-	err := db.QueryRow("SELECT password FROM users WHERE id=?", id).Scan(&password)
+	err := db.QueryRow("SELECT password FROM users WHERE id=?", s.id).Scan(&password)
 	if err == sql.ErrNoRows {
 		log.Println("No user with that ID.")
-		return irc.ERR_GENERAL
+		s.receive <- irc.ERR_GENERAL + irc.CRLF
+		return
 	} else if err != nil {
 		log.Println(err)
-		return irc.ERR_GENERAL
+		s.receive <- irc.ERR_GENERAL + irc.CRLF
+		return
 	}
 
 	if password != "" {
-		return irc.ERR_ALREADYREGISTRED
+		s.receive <- irc.ERR_ALREADYREGISTRED + irc.CRLF
+		return
 	}
-	_, err = db.Exec("UPDATE users SET password=? WHERE id=?", msg.Params.Others[0], id)
+	_, err = db.Exec("UPDATE users SET password=? WHERE id=?", msg.Params.Others[0], s.id)
 	if err != nil {
 		log.Println(err)
-		return irc.ERR_GENERAL
+		s.receive <- irc.ERR_GENERAL + irc.CRLF
 	}
-	return ""
 }
 
 // Handles NICK commands by updating the session record's nickname field.
 // Returns an empty string on success or the appropriate error reply.
-func handleNick(id int64, msg *parser.Message) string {
+func (s *Session) handleNick(msg *parser.Message) {
 	var password string
 	var nickname string
 
-	err := db.QueryRow("SELECT password,nickname FROM users WHERE id=?", id).Scan(&password, &nickname)
+	err := db.QueryRow("SELECT password,nickname FROM users WHERE id=?", s.id).Scan(&password, &nickname)
 	if err == sql.ErrNoRows {
 		log.Println("No user with that ID.")
-		return irc.ERR_GENERAL
+		s.receive <- irc.ERR_GENERAL + irc.CRLF
+		return
 	} else if err != nil {
 		log.Println(err)
-		return irc.ERR_GENERAL
+		s.receive <- irc.ERR_GENERAL + irc.CRLF
+		return
 	}
 
 	if password == "" {
-		return irc.ERR_NOTREGISTERED
+		s.receive <- irc.ERR_NOTREGISTERED + irc.CRLF
+		return
 	}
 	if msg.Params.Num < 1 {
-		return irc.ERR_NONICKNAMEGIVEN
+		s.receive <- irc.ERR_NONICKNAMEGIVEN + irc.CRLF
+		return
 	}
-	//TODO: check that nick fits spec
-	//TODO: check for collisions
-	_, err = db.Exec("UPDATE users SET nickname=? WHERE id=?", msg.Params.Others[0], id)
+	//TODO check that nick fits spec
+	//TODO check for collisions
+	_, err = db.Exec("UPDATE users SET nickname=? WHERE id=?", msg.Params.Others[0], s.id)
 	if err != nil {
 		log.Println(err)
-		return irc.ERR_GENERAL
+		s.receive <- irc.ERR_GENERAL + irc.CRLF
 	}
-	return ""
 }
 
 // Handles USER commands by updating session record with username and mode
 // (along with user's real name). Returns a welcome reply on success or the
 // appropriate error reply.
-func handleUser(id int64, msg *parser.Message) string {
+func (s *Session) handleUser(msg *parser.Message) {
 	var username string
 	var realname string
 	var mode int
 
-	err := db.QueryRow("SELECT username,realname FROM users WHERE id=?", id).Scan(&username, &realname)
+	err := db.QueryRow("SELECT username,realname FROM users WHERE id=?", s.id).Scan(&username, &realname)
 	if err == sql.ErrNoRows {
 		log.Println("No user with that ID.")
-		return irc.ERR_GENERAL
+		s.receive <- irc.ERR_GENERAL + irc.CRLF
+		return
 	} else if err != nil {
 		log.Println(err)
-		return irc.ERR_GENERAL
+		s.receive <- irc.ERR_GENERAL + irc.CRLF
+		return
 	}
 
 	if msg.Params.Num < 4 {
-		return irc.ERR_NEEDMOREPARAMS
+		s.receive <- irc.ERR_NEEDMOREPARAMS + irc.CRLF
+		return
 	}
 	if username != "" {
-		return irc.ERR_ALREADYREGISTRED
+		s.receive <- irc.ERR_ALREADYREGISTRED + irc.CRLF
+		return
 	}
 
-	//TODO: probably check that each field is safe
+	//TODO probably check that each field is safe
 	mode, err = strconv.Atoi(msg.Params.Others[1])
 	if err != nil {
 		log.Println(err)
 		mode = 0
 	}
-	_, err = db.Exec("UPDATE users SET username=?,mode=?,realname=? WHERE id=?", msg.Params.Others[0], mode, msg.Params.Others[3], id)
-	return irc.RPL_WELCOME
+	_, err = db.Exec("UPDATE users SET username=?,mode=?,realname=? WHERE id=?", msg.Params.Others[0], mode, msg.Params.Others[3], s.id)
+	s.receive <- irc.RPL_WELCOME + irc.CRLF
 }
 
 // Handles QUIT commands by removing session record from database.
-func handleQuit(id int64, msg *parser.Message) string {
-	_, err := db.Exec("DELETE FROM users WHERE id=?", id)
+func (s *Session) handleQuit(msg *parser.Message) {
+	_, err := db.Exec("DELETE FROM users WHERE id=?", s.id)
 	if err != nil {
 		panic(err)
 	}
-	return irc.ERR_CONNCLOSED
+	s.receive <- irc.ERR_CONNCLOSED + irc.CRLF
 }
 
-func handlePrivMsg(id int64, msg *parser.Message) string {
+func (s *Session) handlePrivMsg(msg *parser.Message) {
 	var targetid int64
 	var buf []byte
 	err := db.QueryRow("SELECT id FROM users WHERE nickname=?", msg.Params.Others[0]).Scan(&targetid)
 	if err == sql.ErrNoRows {
-		//log.Println("No user with that ID.")
-		return errors.New(irc.ERR_NOSUCHNICK + " " + msg.Params.Others[0]).Error()
+		log.Println("No user with that ID.")
+		s.receive <- errors.New(irc.ERR_NOSUCHNICK + " " + msg.Params.Others[0] + irc.CRLF).Error()
+		return
 	} else if err != nil {
 		log.Println(err)
-		return irc.ERR_GENERAL
+		s.receive <- irc.ERR_GENERAL + irc.CRLF
+		return
 	}
 
 	if msg.Params.Num < 2 {
-		return irc.ERR_NOTEXTTOSEND
+		s.receive <- irc.ERR_NOTEXTTOSEND + irc.CRLF
+		return
 	}
 	targetSession, ok := sessions[targetid]
 	if !ok {
-		return irc.ERR_NORECIPIENT
+		s.receive <- irc.ERR_NORECIPIENT + irc.CRLF
+		return
 	}
 	buf = append(buf, []byte(msg.Command)...)
 	for _, p := range msg.Params.Others {
 		buf = append(buf, []byte(" "+p)...)
 	}
-	buf = append(buf, []byte("\r\n")...)
+	buf = append(buf, []byte(irc.CRLF)...)
 	fmt.Print(string(buf)) // debug
 	_, _ = targetSession.conn.Write(buf)
-	return ""
 }
 
 /* generic message handler */
-func handle(id int64, msg *parser.Message) string {
+func (s *Session) handle(msg *parser.Message) {
 	switch strings.ToUpper(msg.Command) {
 	case "QUIT":
-		return handleQuit(id, msg)
-		//return irc.ERR_CONNCLOSED
+		s.handleQuit(msg)
 	case "PASS":
-		return handlePass(id, msg)
+		s.handlePass(msg)
 	case "NICK":
-		return handleNick(id, msg)
+		s.handleNick(msg)
 	case "USER":
-		return handleUser(id, msg)
+		s.handleUser(msg)
 	case "PRIVMSG":
-		return handlePrivMsg(id, msg)
+		s.handlePrivMsg(msg)
 	}
-	return ""
 }
 
 // Handles session termination. Recovers from panicking within serve(). Deletes
 // session record from database before closing connection.
-func closeConnection(conn net.Conn, id int64) {
-	defer conn.Close()
-	fmt.Println("Terminating session", id)
+func (s *Session) terminate() {
+	defer s.conn.Close()
+	fmt.Println("Terminating session", s.id)
 	if err := recover(); err != nil {
 		fmt.Println("Recovered:", err)
 		//_, _ = conn.Write([]byte(fmt.Sprintf("%v", err)))
 	}
-	_, err := db.Exec("DELETE FROM users WHERE id=?", id)
-	delete(sessions, id)
+	delete(sessions, s.id)
+	_, err := db.Exec("DELETE FROM users WHERE id=?", s.id)
 	if err != nil {
 		panic(err)
 	}
 }
 
 // Given a connection, read and print messages to console
-//TODO: after parsing message, check state info to determine if connection should stay open
+//TODO after parsing message, check state info to determine if connection should stay open
 func serve(conn net.Conn) {
 	p := parser.NewParser(conn)
 
@@ -212,21 +223,24 @@ func serve(conn net.Conn) {
 	if err != nil {
 		panic(err)
 	}
-	sessions[id] = session{id, conn, make(chan string, irc.CHAN_BUF_SIZE)}
+
+	s := &Session{id, conn, make(chan string, irc.CHAN_BUF_SIZE)}
+	sessions[id] = s
 	fmt.Println("Created session", id)
-	defer closeConnection(conn, id)
+	defer s.terminate()
 
 	// Repeatedly handle messages
 	for {
-		msg, err := p.Parse()
-		if err != nil {
-			panic(err)
-		}
-		parser.Print(msg) // debug
-		reply := handle(id, msg)
-		_, _ = conn.Write([]byte(reply))
-		if reply == irc.ERR_CONNCLOSED {
-			return
+		select {
+		case out := <-s.receive:
+			_, _ = conn.Write([]byte(out))
+		default:
+			msg, err := p.Parse()
+			if err != nil {
+				panic(err)
+			}
+			parser.Print(msg) // debug
+			s.handle(msg)
 		}
 	}
 }

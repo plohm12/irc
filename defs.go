@@ -3,6 +3,7 @@ package irc
 const BUFFER_SIZE int = 512
 const CHAN_BUF_SIZE int = 5 // buffer size for Go channels
 const DEFAULT_USER string = "guest"
+const CRLF string = "\r\n"
 
 /* Connection information */
 const NETWORK string = "tcp"
