@@ -6,7 +6,6 @@ package main
 
 import (
 	"database/sql"
-	"errors"
 	"fmt"
 	"irc"
 	"irc/parser"
@@ -148,37 +147,72 @@ func (s *Session) handleQuit(msg *parser.Message) {
 // Sends a message to target, which should be the first parameter. Target is
 // either a nick, user, or channel.
 func (s *Session) handlePrivMsg(msg *parser.Message) {
-	var targetid int64
+	var nickname string
+	var username string
+	var senderPrefix string
 	var buf []byte
-	err := db.QueryRow("SELECT id FROM users WHERE nickname=?", msg.Params.Others[0]).Scan(&targetid)
-	if err == sql.ErrNoRows {
-		log.Println("No user with that ID.")
-		s.ch <- errors.New(irc.ERR_NOSUCHNICK + " " + msg.Params.Others[0] + irc.CRLF).Error()
-		return
-	} else if err != nil {
-		log.Println(err)
-		s.ch <- irc.SERVER_PREFIX + " " + irc.ERR_GENERAL + irc.CRLF
+
+	_ = db.QueryRow("SELECT nickname,username FROM users WHERE id=?", s.id).Scan(&nickname, &username)
+	senderPrefix = ":" + nickname + "!" + username + "@" + irc.HOST_IP
+
+	// make sure there is a target and message to send
+	if msg.Params.Num < 2 {
+		s.ch <- irc.SERVER_PREFIX + " " + irc.ERR_NOTEXTTOSEND + " " + nickname + irc.CRLF
 		return
 	}
 
-	if msg.Params.Num < 2 {
-		s.ch <- irc.SERVER_PREFIX + " " + irc.ERR_NOTEXTTOSEND + irc.CRLF
-		return
+	//should this message be broadcast to a channel?
+	if msg.Params.Others[0][0] == '#' {
+		var creatorid int64 // dummy value
+		err := db.QueryRow("SELECT creator FROM channels WHERE channel_name=?", msg.Params.Others[0]).Scan(&creatorid)
+		if err == sql.ErrNoRows {
+			s.ch <- irc.SERVER_PREFIX + " " + irc.ERR_CANNOTSENDTOCHAN + irc.CRLF
+			return
+		}
+		rows, err := db.Query("SELECT user_id FROM user_channel WHERE channel_name=?", msg.Params.Others[0])
+		if err != nil {
+			//do something
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var channeluserid int64
+			rows.Scan(&channeluserid)
+			targetSession, ok := sessions[channeluserid]
+			if !ok {
+				continue
+			}
+			targetSession.ch <- senderPrefix + " " + msg.Command + " " + msg.Params.Others[0] + " " + msg.Params.Others[1] + irc.CRLF
+		}
+	} else {
+		// not a channel message, try to send PM to target user
+		var targetid int64
+		err := db.QueryRow("SELECT id FROM users WHERE nickname=?", msg.Params.Others[0]).Scan(&targetid)
+		if err == sql.ErrNoRows {
+			log.Println("No user with that ID.")
+			s.ch <- irc.SERVER_PREFIX + " " + irc.ERR_NOSUCHNICK + " " + msg.Params.Others[0] + irc.CRLF
+			return
+		} else if err != nil {
+			log.Println(err)
+			s.ch <- irc.SERVER_PREFIX + " " + irc.ERR_GENERAL + irc.CRLF
+			return
+		}
+
+		targetSession, ok := sessions[targetid]
+		if !ok {
+			s.ch <- irc.SERVER_PREFIX + " " + irc.ERR_NORECIPIENT + irc.CRLF
+			return
+		}
+		buf = append(buf, []byte(":"+nickname+"!"+username+"@"+irc.HOST_IP+" ")...)
+		buf = append(buf, []byte(msg.Command)...)
+		for _, p := range msg.Params.Others {
+			buf = append(buf, []byte(" "+p)...)
+		}
+		buf = append(buf, []byte(irc.CRLF)...)
+		fmt.Print(string(buf)) // debug
+		//_, _ = targetSession.conn.Write(buf)
+		targetSession.ch <- string(buf)
+
 	}
-	targetSession, ok := sessions[targetid]
-	if !ok {
-		s.ch <- irc.SERVER_PREFIX + " " + irc.ERR_NORECIPIENT + irc.CRLF
-		return
-	}
-	buf = append(buf, []byte(":"+irc.HOST_IP+" ")...)
-	buf = append(buf, []byte(msg.Command)...)
-	for _, p := range msg.Params.Others {
-		buf = append(buf, []byte(" "+p)...)
-	}
-	buf = append(buf, []byte(irc.CRLF)...)
-	fmt.Print(string(buf)) // debug
-	//_, _ = targetSession.conn.Write(buf)
-	targetSession.ch <- string(buf)
 }
 
 func (s *Session) handleJoin(msg *parser.Message) {

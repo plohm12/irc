@@ -221,7 +221,7 @@ func sendMsg(command string, args ...interface{}) error {
 	}
 	buf = append(buf, []byte("\r\n")...)
 
-	fmt.Print(string(buf)) // debug
+	//fmt.Print(string(buf)) // debug
 
 	if len(buf) > irc.BUFFER_SIZE {
 		return errors.New(fmt.Sprintf("Message length %v too big: %s", len(buf), string(buf)))
