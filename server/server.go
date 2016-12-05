@@ -20,9 +20,9 @@ import (
 
 // Contains unique ID, network connection, and receiving channel
 type Session struct {
-	id      int64
-	conn    net.Conn
-	receive chan string
+	id   int64
+	conn net.Conn
+	ch   chan string
 }
 
 var (
@@ -37,7 +37,7 @@ var (
 func (s *Session) handlePass(msg *parser.Message) {
 	var password string
 	if msg.Params.Num < 1 {
-		s.receive <- irc.ERR_NEEDMOREPARAMS + irc.CRLF
+		s.ch <- irc.ERR_NEEDMOREPARAMS + irc.CRLF
 		return
 	}
 
@@ -45,22 +45,22 @@ func (s *Session) handlePass(msg *parser.Message) {
 	err := db.QueryRow("SELECT password FROM users WHERE id=?", s.id).Scan(&password)
 	if err == sql.ErrNoRows {
 		log.Println("No user with that ID.")
-		s.receive <- irc.ERR_GENERAL + irc.CRLF
+		s.ch <- irc.ERR_GENERAL + irc.CRLF
 		return
 	} else if err != nil {
 		log.Println(err)
-		s.receive <- irc.ERR_GENERAL + irc.CRLF
+		s.ch <- irc.ERR_GENERAL + irc.CRLF
 		return
 	}
 
 	if password != "" {
-		s.receive <- irc.ERR_ALREADYREGISTRED + irc.CRLF
+		s.ch <- irc.ERR_ALREADYREGISTRED + irc.CRLF
 		return
 	}
 	_, err = db.Exec("UPDATE users SET password=? WHERE id=?", msg.Params.Others[0], s.id)
 	if err != nil {
 		log.Println(err)
-		s.receive <- irc.ERR_GENERAL + irc.CRLF
+		s.ch <- irc.ERR_GENERAL + irc.CRLF
 	}
 }
 
@@ -73,20 +73,20 @@ func (s *Session) handleNick(msg *parser.Message) {
 	err := db.QueryRow("SELECT password,nickname FROM users WHERE id=?", s.id).Scan(&password, &nickname)
 	if err == sql.ErrNoRows {
 		log.Println("No user with that ID.")
-		s.receive <- irc.ERR_GENERAL + irc.CRLF
+		s.ch <- irc.ERR_GENERAL + irc.CRLF
 		return
 	} else if err != nil {
 		log.Println(err)
-		s.receive <- irc.ERR_GENERAL + irc.CRLF
+		s.ch <- irc.ERR_GENERAL + irc.CRLF
 		return
 	}
 
 	if password == "" {
-		s.receive <- irc.ERR_NOTREGISTERED + irc.CRLF
+		s.ch <- irc.ERR_NOTREGISTERED + irc.CRLF
 		return
 	}
 	if msg.Params.Num < 1 {
-		s.receive <- irc.ERR_NONICKNAMEGIVEN + irc.CRLF
+		s.ch <- irc.ERR_NONICKNAMEGIVEN + irc.CRLF
 		return
 	}
 	//TODO check that nick fits spec
@@ -94,7 +94,7 @@ func (s *Session) handleNick(msg *parser.Message) {
 	_, err = db.Exec("UPDATE users SET nickname=? WHERE id=?", msg.Params.Others[0], s.id)
 	if err != nil {
 		log.Println(err)
-		s.receive <- irc.ERR_GENERAL + irc.CRLF
+		s.ch <- irc.ERR_GENERAL + irc.CRLF
 	}
 }
 
@@ -109,20 +109,20 @@ func (s *Session) handleUser(msg *parser.Message) {
 	err := db.QueryRow("SELECT username,realname FROM users WHERE id=?", s.id).Scan(&username, &realname)
 	if err == sql.ErrNoRows {
 		log.Println("No user with that ID.")
-		s.receive <- irc.ERR_GENERAL + irc.CRLF
+		s.ch <- irc.ERR_GENERAL + irc.CRLF
 		return
 	} else if err != nil {
 		log.Println(err)
-		s.receive <- irc.ERR_GENERAL + irc.CRLF
+		s.ch <- irc.ERR_GENERAL + irc.CRLF
 		return
 	}
 
 	if msg.Params.Num < 4 {
-		s.receive <- irc.ERR_NEEDMOREPARAMS + irc.CRLF
+		s.ch <- irc.ERR_NEEDMOREPARAMS + irc.CRLF
 		return
 	}
 	if username != "" {
-		s.receive <- irc.ERR_ALREADYREGISTRED + irc.CRLF
+		s.ch <- irc.ERR_ALREADYREGISTRED + irc.CRLF
 		return
 	}
 
@@ -133,7 +133,7 @@ func (s *Session) handleUser(msg *parser.Message) {
 		mode = 0
 	}
 	_, err = db.Exec("UPDATE users SET username=?,mode=?,realname=? WHERE id=?", msg.Params.Others[0], mode, msg.Params.Others[3], s.id)
-	s.receive <- irc.RPL_WELCOME + irc.CRLF
+	s.ch <- irc.RPL_WELCOME + irc.CRLF
 }
 
 // Handles QUIT commands by removing session record from database.
@@ -142,7 +142,7 @@ func (s *Session) handleQuit(msg *parser.Message) {
 	if err != nil {
 		panic(err)
 	}
-	s.receive <- irc.ERR_CONNCLOSED + irc.CRLF
+	s.ch <- irc.ERR_CONNCLOSED + irc.CRLF
 }
 
 func (s *Session) handlePrivMsg(msg *parser.Message) {
@@ -151,21 +151,21 @@ func (s *Session) handlePrivMsg(msg *parser.Message) {
 	err := db.QueryRow("SELECT id FROM users WHERE nickname=?", msg.Params.Others[0]).Scan(&targetid)
 	if err == sql.ErrNoRows {
 		log.Println("No user with that ID.")
-		s.receive <- errors.New(irc.ERR_NOSUCHNICK + " " + msg.Params.Others[0] + irc.CRLF).Error()
+		s.ch <- errors.New(irc.ERR_NOSUCHNICK + " " + msg.Params.Others[0] + irc.CRLF).Error()
 		return
 	} else if err != nil {
 		log.Println(err)
-		s.receive <- irc.ERR_GENERAL + irc.CRLF
+		s.ch <- irc.ERR_GENERAL + irc.CRLF
 		return
 	}
 
 	if msg.Params.Num < 2 {
-		s.receive <- irc.ERR_NOTEXTTOSEND + irc.CRLF
+		s.ch <- irc.ERR_NOTEXTTOSEND + irc.CRLF
 		return
 	}
 	targetSession, ok := sessions[targetid]
 	if !ok {
-		s.receive <- irc.ERR_NORECIPIENT + irc.CRLF
+		s.ch <- irc.ERR_NORECIPIENT + irc.CRLF
 		return
 	}
 	buf = append(buf, []byte(msg.Command)...)
@@ -232,8 +232,8 @@ func serve(conn net.Conn) {
 	// Repeatedly handle messages
 	for {
 		select {
-		case out := <-s.receive:
-			_, _ = conn.Write([]byte(out))
+		case outgoing := <-s.ch:
+			_, _ = conn.Write([]byte(outgoing))
 		default:
 			msg, err := p.Parse()
 			if err != nil {
