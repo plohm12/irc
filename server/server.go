@@ -37,7 +37,7 @@ var (
 func (s *Session) handlePass(msg *parser.Message) {
 	var password string
 	if msg.Params.Num < 1 {
-		s.ch <- irc.ERR_NEEDMOREPARAMS + irc.CRLF
+		s.ch <- irc.SERVER_PREFIX + " " + irc.ERR_NEEDMOREPARAMS + irc.CRLF
 		return
 	}
 
@@ -45,22 +45,22 @@ func (s *Session) handlePass(msg *parser.Message) {
 	err := db.QueryRow("SELECT password FROM users WHERE id=?", s.id).Scan(&password)
 	if err == sql.ErrNoRows {
 		log.Println("No user with that ID.")
-		s.ch <- irc.ERR_GENERAL + irc.CRLF
+		s.ch <- irc.SERVER_PREFIX + " " + irc.ERR_GENERAL + irc.CRLF
 		return
 	} else if err != nil {
 		log.Println(err)
-		s.ch <- irc.ERR_GENERAL + irc.CRLF
+		s.ch <- irc.SERVER_PREFIX + " " + irc.ERR_GENERAL + irc.CRLF
 		return
 	}
 
 	if password != "" {
-		s.ch <- irc.ERR_ALREADYREGISTRED + irc.CRLF
+		s.ch <- irc.SERVER_PREFIX + " " + irc.ERR_ALREADYREGISTRED + irc.CRLF
 		return
 	}
 	_, err = db.Exec("UPDATE users SET password=? WHERE id=?", msg.Params.Others[0], s.id)
 	if err != nil {
 		log.Println(err)
-		s.ch <- irc.ERR_GENERAL + irc.CRLF
+		s.ch <- irc.SERVER_PREFIX + " " + irc.ERR_GENERAL + irc.CRLF
 	}
 }
 
@@ -73,20 +73,20 @@ func (s *Session) handleNick(msg *parser.Message) {
 	err := db.QueryRow("SELECT password,nickname FROM users WHERE id=?", s.id).Scan(&password, &nickname)
 	if err == sql.ErrNoRows {
 		log.Println("No user with that ID.")
-		s.ch <- irc.ERR_GENERAL + irc.CRLF
+		s.ch <- irc.SERVER_PREFIX + " " + irc.ERR_GENERAL + irc.CRLF
 		return
 	} else if err != nil {
 		log.Println(err)
-		s.ch <- irc.ERR_GENERAL + irc.CRLF
+		s.ch <- irc.SERVER_PREFIX + " " + irc.ERR_GENERAL + irc.CRLF
 		return
 	}
 
 	if password == "" {
-		s.ch <- irc.ERR_NOTREGISTERED + irc.CRLF
+		s.ch <- irc.SERVER_PREFIX + " " + irc.ERR_NOTREGISTERED + irc.CRLF
 		return
 	}
 	if msg.Params.Num < 1 {
-		s.ch <- irc.ERR_NONICKNAMEGIVEN + irc.CRLF
+		s.ch <- irc.SERVER_PREFIX + " " + irc.ERR_NONICKNAMEGIVEN + irc.CRLF
 		return
 	}
 	//TODO check that nick fits spec
@@ -94,7 +94,7 @@ func (s *Session) handleNick(msg *parser.Message) {
 	_, err = db.Exec("UPDATE users SET nickname=? WHERE id=?", msg.Params.Others[0], s.id)
 	if err != nil {
 		log.Println(err)
-		s.ch <- irc.ERR_GENERAL + irc.CRLF
+		s.ch <- irc.SERVER_PREFIX + " " + irc.ERR_GENERAL + irc.CRLF
 	}
 }
 
@@ -109,20 +109,20 @@ func (s *Session) handleUser(msg *parser.Message) {
 	err := db.QueryRow("SELECT username,realname FROM users WHERE id=?", s.id).Scan(&username, &realname)
 	if err == sql.ErrNoRows {
 		log.Println("No user with that ID.")
-		s.ch <- irc.ERR_GENERAL + irc.CRLF
+		s.ch <- irc.SERVER_PREFIX + " " + irc.ERR_GENERAL + irc.CRLF
 		return
 	} else if err != nil {
 		log.Println(err)
-		s.ch <- irc.ERR_GENERAL + irc.CRLF
+		s.ch <- irc.SERVER_PREFIX + " " + irc.ERR_GENERAL + irc.CRLF
 		return
 	}
 
 	if msg.Params.Num < 4 {
-		s.ch <- irc.ERR_NEEDMOREPARAMS + irc.CRLF
+		s.ch <- irc.SERVER_PREFIX + " " + irc.ERR_NEEDMOREPARAMS + irc.CRLF
 		return
 	}
 	if username != "" {
-		s.ch <- irc.ERR_ALREADYREGISTRED + irc.CRLF
+		s.ch <- irc.SERVER_PREFIX + " " + irc.ERR_ALREADYREGISTRED + irc.CRLF
 		return
 	}
 
@@ -133,7 +133,7 @@ func (s *Session) handleUser(msg *parser.Message) {
 		mode = 0
 	}
 	_, err = db.Exec("UPDATE users SET username=?,mode=?,realname=? WHERE id=?", msg.Params.Others[0], mode, msg.Params.Others[3], s.id)
-	s.ch <- irc.RPL_WELCOME + irc.CRLF
+	s.ch <- irc.SERVER_PREFIX + " " + irc.RPL_WELCOME + " " + username + irc.CRLF
 }
 
 // Handles QUIT commands by removing session record from database.
@@ -142,9 +142,11 @@ func (s *Session) handleQuit(msg *parser.Message) {
 	if err != nil {
 		panic(err)
 	}
-	s.ch <- irc.ERR_CONNCLOSED + irc.CRLF
+	s.ch <- irc.SERVER_PREFIX + " " + irc.ERR_CONNCLOSED + irc.CRLF
 }
 
+// Sends a message to target, which should be the first parameter. Target is
+// either a nick, user, or channel.
 func (s *Session) handlePrivMsg(msg *parser.Message) {
 	var targetid int64
 	var buf []byte
@@ -155,26 +157,53 @@ func (s *Session) handlePrivMsg(msg *parser.Message) {
 		return
 	} else if err != nil {
 		log.Println(err)
-		s.ch <- irc.ERR_GENERAL + irc.CRLF
+		s.ch <- irc.SERVER_PREFIX + " " + irc.ERR_GENERAL + irc.CRLF
 		return
 	}
 
 	if msg.Params.Num < 2 {
-		s.ch <- irc.ERR_NOTEXTTOSEND + irc.CRLF
+		s.ch <- irc.SERVER_PREFIX + " " + irc.ERR_NOTEXTTOSEND + irc.CRLF
 		return
 	}
 	targetSession, ok := sessions[targetid]
 	if !ok {
-		s.ch <- irc.ERR_NORECIPIENT + irc.CRLF
+		s.ch <- irc.SERVER_PREFIX + " " + irc.ERR_NORECIPIENT + irc.CRLF
 		return
 	}
+	buf = append(buf, []byte(":"+irc.HOST_IP+" ")...)
 	buf = append(buf, []byte(msg.Command)...)
 	for _, p := range msg.Params.Others {
 		buf = append(buf, []byte(" "+p)...)
 	}
 	buf = append(buf, []byte(irc.CRLF)...)
 	fmt.Print(string(buf)) // debug
-	_, _ = targetSession.conn.Write(buf)
+	//_, _ = targetSession.conn.Write(buf)
+	targetSession.ch <- string(buf)
+}
+
+func (s *Session) handleJoin(msg *parser.Message) {
+	if msg.Params.Num < 1 {
+		s.ch <- irc.SERVER_PREFIX + " " + irc.ERR_NEEDMOREPARAMS + irc.CRLF
+		return
+	}
+	topic, err := irc.JoinChannel(db, msg.Params.Others[0], s.id)
+	if err != nil {
+		s.ch <- err.Error() // is this correct?
+		return
+	}
+	s.ch <- irc.SERVER_PREFIX + " " + irc.RPL_TOPIC + " " + msg.Params.Others[0] + " :" + topic + irc.CRLF
+}
+
+func (s *Session) handlePart(msg *parser.Message) {
+	if msg.Params.Num < 1 {
+		s.ch <- irc.SERVER_PREFIX + " " + irc.ERR_NEEDMOREPARAMS + irc.CRLF
+		return
+	}
+	err := irc.PartChannel(db, msg.Params.Others[0], s.id)
+	if err != nil {
+		s.ch <- err.Error()
+	}
+
 }
 
 /* generic message handler */
@@ -190,11 +219,16 @@ func (s *Session) handle(msg *parser.Message) {
 		s.handleUser(msg)
 	case "PRIVMSG":
 		s.handlePrivMsg(msg)
+	case "JOIN":
+		s.handleJoin(msg)
+	case "PART":
+		s.handlePart(msg)
 	}
 }
 
 // Handles session termination. Recovers from panicking within serve(). Deletes
 // session record from database before closing connection.
+//TODO safely part from all channels
 func (s *Session) terminate() {
 	defer s.conn.Close()
 	fmt.Println("Terminating session", s.id)

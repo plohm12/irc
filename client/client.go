@@ -36,10 +36,12 @@ func printHelp(topic string) {
 	switch topic {
 	default:
 		fmt.Println("Here is a list of available commands:")
-		fmt.Println("  /help\t- displays this help")
-		fmt.Println("  /pm <target> <message>\t- sends private <message> to <target>")
+		fmt.Println("  /help\t- display this help")
+		fmt.Println("  /join <channel>\t- join a channel or make a new one")
+		fmt.Println("  /part <channel>\t- leave a channel")
+		fmt.Println("  /pm <target> <message>\t- send <message> to <target>")
 		fmt.Println("  /q\t- same as /quit")
-		fmt.Println("  /quit\t- terminates your session")
+		fmt.Println("  /quit\t- terminate your session")
 	}
 }
 
@@ -180,6 +182,10 @@ func handle(command string, params string) error {
 		printHelp(params)
 	case "PM":
 		return handlePrivMsg(params)
+	case "JOIN":
+		return sendMsg("JOIN", params)
+	case "PART":
+		return sendMsg("PART", params)
 	default:
 		unrecognizedCommand(command)
 	}
