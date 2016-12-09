@@ -1,19 +1,13 @@
-//TODO: add better closure defer function
-//TODO: make client more user-friendly
-//TODO: add parser
-//TODO: enumerate help messages
-//TODO: add golang channel for response handling
-//TODO: ensure input matches RFC specs
+//TODO add parser
+//TODO enumerate help messages
 
 package main
 
 import (
 	"bufio"
-	//"bytes"
 	"errors"
 	"fmt"
 	"irc"
-	"log"
 	"net"
 	"os"
 	"strings"
@@ -29,10 +23,32 @@ var (
 	realname string = ""
 )
 
+// Prints initial usage information.
 func printWelcome() {
 	fmt.Println("Welcome to the Internet Relay Chat!")
-	fmt.Println("For HELP, type \"help\" at any time.")
-	fmt.Println("To terminate your session, type \"quit\" at any time.")
+	fmt.Println("For HELP, type \"/help\" at any time.")
+	fmt.Println("To terminate your session, type \"/quit\" at any time.")
+}
+
+// Prints a generic help message. Eventually will provide customized help for
+// each command.
+func printHelp(topic string) {
+	switch topic {
+	default:
+		fmt.Println("Here is a list of available commands:")
+		fmt.Println("  /help\t- display this help")
+		fmt.Println("  /join <channel>\t- join a channel or make a new one")
+		fmt.Println("  /part <channel>\t- leave a channel")
+		fmt.Println("  /pm <target> <message>\t- send <message> to <target>")
+		fmt.Println("  /q\t- same as /quit")
+		fmt.Println("  /quit\t- terminate your session")
+	}
+}
+
+// Called when user tries a command that does not exist.
+func unrecognizedCommand(command string) {
+	fmt.Println("Unrecognized command:", strings.ToUpper(command))
+	fmt.Println("Do you need \"/help\"?")
 }
 
 // Prompts the user for a session password, nickname, username, and real name.
@@ -42,7 +58,7 @@ func register() {
 	for password == "" {
 		fmt.Print("Create a session password:\n> ")
 		s := getInput()
-		if strings.ToUpper(s) == "HELP" {
+		if strings.ToUpper(s) == "/HELP" {
 			continue
 		}
 		sendMsg("PASS", s)
@@ -56,7 +72,7 @@ func register() {
 	for nick == "" {
 		fmt.Print("Enter your nickname:\n> ")
 		s := getInput()
-		if strings.ToUpper(s) == "HELP" {
+		if strings.ToUpper(s) == "/HELP" {
 			continue
 		}
 		sendMsg("NICK", s)
@@ -67,7 +83,7 @@ func register() {
 	for {
 		fmt.Print("Enter your username (optional):\n> ")
 		s := getInput()
-		if strings.ToUpper(s) == "HELP" {
+		if strings.ToUpper(s) == "/HELP" {
 			continue // only loops if user types help
 		}
 		if s == "" {
@@ -81,7 +97,7 @@ func register() {
 	for realname == "" {
 		fmt.Print("Enter your real name:\n> ")
 		s := getInput()
-		if strings.ToUpper(s) == "HELP" {
+		if strings.ToUpper(s) == "/HELP" {
 			continue
 		}
 		realname = s
@@ -89,6 +105,7 @@ func register() {
 	sendMsg("USER", user, 0, "*", ":"+realname)
 }
 
+// Currently not used.
 func handleResponse() bool {
 	buf := make([]byte, irc.BUFFER_SIZE)
 
@@ -109,7 +126,7 @@ func handleResponse() bool {
 			fmt.Println("You must specify your nickname.")
 			return false
 		case irc.ERR_GENERAL:
-			fmt.Println("General error. Do you need HELP?")
+			fmt.Println("General error. Do you need /HELP?")
 			return false
 		default:
 			fmt.Printf("Response string: %s\n", buf)
@@ -129,27 +146,82 @@ func getInput() string {
 	s = strings.TrimSuffix(s, "\r\n")
 	s = strings.TrimSuffix(s, "\n")
 	sUpper := strings.ToUpper(s)
-	if sUpper == "QUIT" {
+	if sUpper == "/Q" || sUpper == "/QUIT" {
 		panic(sUpper)
 	}
 	return s
 }
 
-// Writes a message in IRC format to the server. Command must be a string.
-// If a parameter contains a space, it will be separated into two parameters by
-// the server. The space(s) in a parameter may be preserved if it is the last
-// parameter by prepending a colon (":") to the parameter argument.
+// Attempt to parse a command from the input, which must be escaped by "/".
+// Currently, commands are the only valid input.
+func getCommand(msg string) (command string, trailing string) {
+	var cmd []byte
+	var cmdlen int
+	if len(msg) == 0 {
+		return "", ""
+	}
+	if msg[0] == '/' {
+		cmdlen++
+		for _, v := range msg[1:] {
+			cmdlen++
+			if v == ' ' {
+				break
+			}
+			cmd = append(cmd, byte(v))
+		}
+	}
+	command = string(cmd)
+	trailing = string(msg[cmdlen:])
+	return
+}
+
+// Examine the command to determine a course of action.
+func handle(command string, params string) error {
+	switch strings.ToUpper(command) {
+	case "HELP":
+		printHelp(params)
+	case "PM":
+		return handlePrivMsg(params)
+	case "JOIN":
+		return sendMsg("JOIN", params)
+	case "PART":
+		return sendMsg("PART", params)
+	default:
+		unrecognizedCommand(command)
+	}
+	return nil
+}
+
+// Prepares a private message and calls sendMsg() to send it to the server.
+func handlePrivMsg(params string) error {
+	var target []byte
+	var targetlen int
+
+	for _, v := range params {
+		targetlen++
+		if v == ' ' {
+			break
+		}
+		target = append(target, byte(v))
+	}
+	return sendMsg("PRIVMSG", string(target), ":"+params[targetlen:])
+}
+
+// Writes a message in IRC format to the server. Command must already be
+// determined. If a parameter contains a space, it will be separated into two
+// parameters by the server. The space(s) in a parameter may be preserved if it
+// is the last parameter by prepending a colon (":") to the parameter argument.
 // Returns nil on success, error otherwise.
-func sendMsg(command string, a ...interface{}) error {
+func sendMsg(command string, args ...interface{}) error {
 	var buf []byte
 	buf = append(buf, []byte(command)...)
-	for _, val := range a {
+	for _, val := range args {
 		s := fmt.Sprint(" ", val)
 		buf = append(buf, []byte(s)...)
 	}
 	buf = append(buf, []byte("\r\n")...)
 
-	fmt.Print(string(buf))
+	//fmt.Print(string(buf)) // debug
 
 	if len(buf) > irc.BUFFER_SIZE {
 		return errors.New(fmt.Sprintf("Message length %v too big: %s", len(buf), string(buf)))
@@ -161,6 +233,21 @@ func sendMsg(command string, a ...interface{}) error {
 	return nil
 }
 
+// Asyncrhonously waits for incoming messages from the server and pushes them to
+// the channel.
+func receiveMessages(received chan<- string) {
+	buf := make([]byte, irc.BUFFER_SIZE)
+	for {
+		numRead, err := conn.Read(buf)
+		if err != nil {
+			panic(err)
+		}
+		if numRead > 0 {
+			received <- string(buf[:numRead])
+		}
+	}
+}
+
 // Program entry point
 func main() {
 	var err error
@@ -169,12 +256,18 @@ func main() {
 	// Attempt to connect to the server address and port via TCP
 	conn, err = net.Dial(irc.NETWORK, irc.HOST_ADDRESS)
 	if err != nil {
-		log.Fatalln(err)
+		panic(err)
 	}
 
+	// A buffered channel of messages sent from the server;
+	// previously "replies"
+	received := make(chan string, irc.CHAN_BUF_SIZE)
+
+	// Executes very last. This function recovers from panic() if necessary,
+	// and closes the connection.
 	defer func() {
 		if err := recover(); err != nil {
-			if err == "QUIT" {
+			if err == "/Q" || err == "/QUIT" {
 				sendMsg("QUIT")
 			} else {
 				fmt.Println("Recovered:", err)
@@ -183,12 +276,25 @@ func main() {
 		conn.Close()
 	}()
 
+	go receiveMessages(received)
+
 	// Create a byte reader for stdin
 	reader = bufio.NewReaderSize(os.Stdin, irc.BUFFER_SIZE)
 	register()
 
-	// Read a line of text, and write it to the server
 	for {
-
+		// If a message is in the channel, handle it. Otherwise, prompt the user
+		// for input. This clunky handling will need to be modified.
+		select {
+		case msg := <-received:
+			fmt.Print(msg)
+		default:
+			fmt.Print("> ")
+			input := getInput()
+			command, params := getCommand(input)
+			if command != "" {
+				handle(command, params)
+			}
+		}
 	}
 }

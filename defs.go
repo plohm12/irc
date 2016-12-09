@@ -1,13 +1,16 @@
 package irc
 
 const BUFFER_SIZE int = 512
+const CHAN_BUF_SIZE int = 5 // buffer size for Go channels
 const DEFAULT_USER string = "guest"
+const CRLF string = "\r\n"
 
 /* Connection information */
 const NETWORK string = "tcp"
 const HOST_IP string = "127.0.0.1"
 const HOST_PORT string = "6667"
 const HOST_ADDRESS string = HOST_IP + ":" + HOST_PORT
+const SERVER_PREFIX string = ":" + HOST_IP
 
 /* Database information */
 const DB_DRIVER string = "mysql"
