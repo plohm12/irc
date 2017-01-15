@@ -1,6 +1,7 @@
 //TODO remove any leftover records when server terminates?
 //TODO convert string returns to error returns
 //TODO implement goroutine channels
+//TODO transfer database code to database.go file and use prepared statements
 
 package main
 
@@ -272,6 +273,19 @@ func (s *Session) terminate() {
 	}
 	delete(sessions, s.id)
 	_, err := db.Exec("DELETE FROM users WHERE id=?", s.id)
+	if err != nil {
+		panic(err)
+	}
+}
+
+// Initialize database tables. Must defer destroyDB() immediately following this
+// function call.
+func createDB() {
+	db, err = sql.Open(irc.DB_DRIVER, irc.DB_DATASOURCE)
+	if err != nil {
+		panic(err)
+	}
+	_, err := db.Exec("CREATE DATABASE IF NOT EXIST ?", irc.DB_NAME)
 	if err != nil {
 		panic(err)
 	}
