@@ -15,10 +15,9 @@ const SERVER_PREFIX string = ":" + HOST_IP
 /* Database information */
 const DB_DRIVER string = "mysql"
 const DB_USER string = "root"
-
-//const DB_PASS string = "root"
+const DB_PASS string = "root"
 const DB_NAME string = "irc"
-const DB_DATASOURCE string = DB_USER + "@/"
+const DB_DATASOURCE string = DB_USER + ":" + DB_PASS + "@/"
 
 /* IRC Reply codes per RFC 2812 */
 const RPL_NOP string = "000" //nop

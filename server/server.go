@@ -278,19 +278,6 @@ func (s *Session) terminate() {
 	}
 }
 
-// Initialize database tables. Must defer destroyDB() immediately following this
-// function call.
-func createDB() {
-	db, err = sql.Open(irc.DB_DRIVER, irc.DB_DATASOURCE)
-	if err != nil {
-		panic(err)
-	}
-	_, err := db.Exec("CREATE DATABASE IF NOT EXIST ?", irc.DB_NAME)
-	if err != nil {
-		panic(err)
-	}
-}
-
 // Given a connection, read and print messages to console
 //TODO after parsing message, check state info to determine if connection should stay open
 func serve(conn net.Conn) {
@@ -331,11 +318,8 @@ func serve(conn net.Conn) {
 func main() {
 	// Access the database that stores state information
 	var err error
-	db, err = sql.Open(irc.DB_DRIVER, irc.DB_DATASOURCE)
-	if err != nil {
-		panic(err)
-	}
-	defer db.Close()
+	db = irc.CreateDB()
+	defer irc.DestroyDB()
 
 	// Test the connection
 	err = db.Ping()
