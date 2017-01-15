@@ -2,7 +2,6 @@ package irc
 
 import (
 	"database/sql"
-	"fmt"
 
 	_ "github.com/go-sql-driver/mysql"
 )
@@ -24,7 +23,7 @@ func CreateDB() *sql.DB {
 	if err != nil {
 		panic(err)
 	}
-	_, err = db.Exec("CREATE TABLE IF NOT EXISTS " + DB_NAME + ".users (" +
+	_, err = db.Exec("CREATE TABLE IF NOT EXISTS " + TABLE_USERS + " (" +
 		"id INT(10) UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY," +
 		"username VARCHAR(20) NOT NULL," +
 		"nickname VARCHAR(20) NOT NULL," +
@@ -34,14 +33,14 @@ func CreateDB() *sql.DB {
 	if err != nil {
 		panic(err)
 	}
-	_, err = db.Exec("CREATE TABLE IF NOT EXISTS " + DB_NAME + ".channels (" +
+	_, err = db.Exec("CREATE TABLE IF NOT EXISTS " + TABLE_CHANNELS + " (" +
 		"channel_name VARCHAR(50) NOT NULL PRIMARY KEY," +
 		"creator VARCHAR(20) NOT NULL," +
 		"topic VARCHAR(128) NOT NULL)")
 	if err != nil {
 		panic(err)
 	}
-	_, err = db.Exec("CREATE TABLE IF NOT EXISTS " + DB_NAME + ".user_channel (" +
+	_, err = db.Exec("CREATE TABLE IF NOT EXISTS " + TABLE_USER_CHANNEL + " (" +
 		"user_id INT(10) UNSIGNED NOT NULL," +
 		"channel_name VARCHAR(50) NOT NULL," +
 		"PRIMARY KEY(user_id, channel_name))")
@@ -54,17 +53,16 @@ func CreateDB() *sql.DB {
 // Drops all tables and the database. DestroyDB should be deferred immediately
 // after a call to CreateDB.
 func DestroyDB() {
-	fmt.Println("Killing your db")
 	var err error
-	_, err = db.Exec("DROP TABLE " + DB_NAME + ".user_channel")
+	_, err = db.Exec("DROP TABLE " + TABLE_USER_CHANNEL)
 	if err != nil {
 		panic(err)
 	}
-	_, err = db.Exec("DROP TABLE " + DB_NAME + ".users")
+	_, err = db.Exec("DROP TABLE " + TABLE_CHANNELS)
 	if err != nil {
 		panic(err)
 	}
-	_, err = db.Exec("DROP TABLE " + DB_NAME + ".channels")
+	_, err = db.Exec("DROP TABLE " + TABLE_USERS)
 	if err != nil {
 		panic(err)
 	}

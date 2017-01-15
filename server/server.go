@@ -6,12 +6,14 @@
 package main
 
 import (
+	"bufio"
 	"database/sql"
 	"fmt"
 	"irc"
 	"irc/parser"
 	"log"
 	"net"
+	"os"
 	"strconv"
 	"strings"
 
@@ -282,6 +284,11 @@ func (s *Session) terminate() {
 //TODO after parsing message, check state info to determine if connection should stay open
 func serve(conn net.Conn) {
 	p := parser.NewParser(conn)
+	defer func() {
+		if err := recover(); err != nil {
+			fmt.Println("Recovered:", err)
+		}
+	}()
 
 	// Create database record
 	dbResult, err := db.Exec("INSERT INTO users () VALUES();")
@@ -319,7 +326,12 @@ func main() {
 	// Access the database that stores state information
 	var err error
 	db = irc.CreateDB()
-	defer irc.DestroyDB()
+	defer func() {
+		if r := recover(); r != nil {
+			fmt.Println(r)
+		}
+		irc.DestroyDB()
+	}()
 
 	// Test the connection
 	err = db.Ping()
@@ -332,13 +344,39 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+	console := make(chan string, 5)
+	incoming := make(chan net.Conn, 5)
+	go func() {
+		reader := bufio.NewReader(os.Stdin)
+		for {
+			msg, _ := reader.ReadString('\n')
+			msg = strings.Trim(msg, "\r\n")
+			msg = strings.Trim(msg, "\n")
+			console <- msg
+		}
+	}()
+
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				panic(err)
+			}
+			incoming <- conn
+		}
+	}()
 
 	// Accept and serve each connection in a new goroutine
 	for {
-		conn, err := ln.Accept()
-		if err != nil {
-			panic(err)
+		select {
+		case msg := <-console:
+			if msg == "q" {
+				panic("QUITTING...")
+			} else {
+				fmt.Println("command not recognized")
+			}
+		case conn := <-incoming:
+			go serve(conn)
 		}
-		go serve(conn)
 	}
 }

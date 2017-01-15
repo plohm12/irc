@@ -17,6 +17,9 @@ const DB_DRIVER string = "mysql"
 const DB_USER string = "root"
 const DB_PASS string = "root"
 const DB_NAME string = "irc"
+const TABLE_USERS string = DB_NAME + ".users"
+const TABLE_CHANNELS string = DB_NAME + ".channels"
+const TABLE_USER_CHANNEL string = DB_NAME + ".user_channel"
 const DB_DATASOURCE string = DB_USER + ":" + DB_PASS + "@/"
 
 /* IRC Reply codes per RFC 2812 */
