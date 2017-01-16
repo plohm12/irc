@@ -1,7 +1,5 @@
-//TODO remove any leftover records when server terminates?
 //TODO convert string returns to error returns
 //TODO implement goroutine channels
-//TODO transfer database code to database.go file and use prepared statements
 
 package main
 
@@ -44,7 +42,7 @@ func (s *Session) handlePass(msg *parser.Message) {
 	}
 
 	// Query database for password
-	err := db.QueryRow("SELECT password FROM users WHERE id=?", s.id).Scan(&password)
+	err := db.QueryRow("SELECT password FROM "+irc.TABLE_USERS+" WHERE id=?", s.id).Scan(&password)
 	if err == sql.ErrNoRows {
 		log.Println("No user with that ID.")
 		s.ch <- irc.SERVER_PREFIX + " " + irc.ERR_GENERAL + irc.CRLF
@@ -72,7 +70,7 @@ func (s *Session) handleNick(msg *parser.Message) {
 	var password string
 	var nickname string
 
-	err := db.QueryRow("SELECT password,nickname FROM users WHERE id=?", s.id).Scan(&password, &nickname)
+	err := db.QueryRow("SELECT password,nickname FROM "+irc.TABLE_USERS+" WHERE id=?", s.id).Scan(&password, &nickname)
 	if err == sql.ErrNoRows {
 		log.Println("No user with that ID.")
 		s.ch <- irc.SERVER_PREFIX + " " + irc.ERR_GENERAL + irc.CRLF
@@ -108,7 +106,7 @@ func (s *Session) handleUser(msg *parser.Message) {
 	var realname string
 	var mode int
 
-	err := db.QueryRow("SELECT username,realname FROM users WHERE id=?", s.id).Scan(&username, &realname)
+	err := db.QueryRow("SELECT username,realname FROM "+irc.TABLE_USERS+" WHERE id=?", s.id).Scan(&username, &realname)
 	if err == sql.ErrNoRows {
 		log.Println("No user with that ID.")
 		s.ch <- irc.SERVER_PREFIX + " " + irc.ERR_GENERAL + irc.CRLF
@@ -140,7 +138,7 @@ func (s *Session) handleUser(msg *parser.Message) {
 
 // Handles QUIT commands by removing session record from database.
 func (s *Session) handleQuit(msg *parser.Message) {
-	_, err := db.Exec("DELETE FROM users WHERE id=?", s.id)
+	_, err := db.Exec("DELETE FROM "+irc.TABLE_USERS+" WHERE id=?", s.id)
 	if err != nil {
 		panic(err)
 	}
@@ -155,7 +153,7 @@ func (s *Session) handlePrivMsg(msg *parser.Message) {
 	var senderPrefix string
 	var buf []byte
 
-	_ = db.QueryRow("SELECT nickname,username FROM users WHERE id=?", s.id).Scan(&nickname, &username)
+	_ = db.QueryRow("SELECT nickname,username FROM "+irc.TABLE_USERS+" WHERE id=?", s.id).Scan(&nickname, &username)
 	senderPrefix = ":" + nickname + "!" + username + "@" + irc.HOST_IP
 
 	// make sure there is a target and message to send
@@ -167,12 +165,12 @@ func (s *Session) handlePrivMsg(msg *parser.Message) {
 	//should this message be broadcast to a channel?
 	if msg.Params.Others[0][0] == '#' {
 		var creatorid int64 // dummy value
-		err := db.QueryRow("SELECT creator FROM channels WHERE channel_name=?", msg.Params.Others[0]).Scan(&creatorid)
+		err := db.QueryRow("SELECT creator FROM "+irc.TABLE_CHANNELS+" WHERE channel_name=?", msg.Params.Others[0]).Scan(&creatorid)
 		if err == sql.ErrNoRows {
 			s.ch <- irc.SERVER_PREFIX + " " + irc.ERR_CANNOTSENDTOCHAN + irc.CRLF
 			return
 		}
-		rows, err := db.Query("SELECT user_id FROM user_channel WHERE channel_name=?", msg.Params.Others[0])
+		rows, err := db.Query("SELECT user_id FROM "+irc.TABLE_USER_CHANNEL+" WHERE channel_name=?", msg.Params.Others[0])
 		if err != nil {
 			//do something
 		}
@@ -189,7 +187,7 @@ func (s *Session) handlePrivMsg(msg *parser.Message) {
 	} else {
 		// not a channel message, try to send PM to target user
 		var targetid int64
-		err := db.QueryRow("SELECT id FROM users WHERE nickname=?", msg.Params.Others[0]).Scan(&targetid)
+		err := db.QueryRow("SELECT id FROM "+irc.TABLE_USERS+" WHERE nickname=?", msg.Params.Others[0]).Scan(&targetid)
 		if err == sql.ErrNoRows {
 			log.Println("No user with that ID.")
 			s.ch <- irc.SERVER_PREFIX + " " + irc.ERR_NOSUCHNICK + " " + msg.Params.Others[0] + irc.CRLF
@@ -274,7 +272,7 @@ func (s *Session) terminate() {
 		//_, _ = conn.Write([]byte(fmt.Sprintf("%v", err)))
 	}
 	delete(sessions, s.id)
-	_, err := db.Exec("DELETE FROM users WHERE id=?", s.id)
+	_, err := db.Exec("DELETE FROM "+irc.TABLE_USERS+" WHERE id=?", s.id)
 	if err != nil {
 		panic(err)
 	}
@@ -291,7 +289,7 @@ func serve(conn net.Conn) {
 	}()
 
 	// Create database record
-	dbResult, err := db.Exec("INSERT INTO users () VALUES();")
+	dbResult, err := db.Exec("INSERT INTO " + irc.TABLE_USERS + " () VALUES();")
 	if err != nil {
 		panic(err)
 	}
