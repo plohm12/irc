@@ -4,7 +4,6 @@
 package main
 
 import (
-	"bufio"
 	"database/sql"
 	"fmt"
 	"irc"
@@ -12,8 +11,10 @@ import (
 	"log"
 	"net"
 	"os"
+	"os/signal"
 	"strconv"
 	"strings"
+	"syscall"
 
 	_ "github.com/go-sql-driver/mysql"
 )
@@ -321,14 +322,19 @@ func serve(conn net.Conn) {
 
 // Program entry point
 func main() {
-	// Access the database that stores state information
 	var err error
+	interruptChannel := make(chan os.Signal, 2)
+	signal.Notify(interruptChannel,
+		os.Interrupt,
+		syscall.SIGINT,
+		syscall.SIGKILL,
+		syscall.SIGTERM)
+
 	db = irc.CreateDB()
 	defer func() {
 		if r := recover(); r != nil {
 			fmt.Println(r)
 		}
-		irc.DestroyDB()
 	}()
 
 	// Test the connection
@@ -342,39 +348,23 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	console := make(chan string, 5)
-	incoming := make(chan net.Conn, 5)
-	go func() {
-		reader := bufio.NewReader(os.Stdin)
-		for {
-			msg, _ := reader.ReadString('\n')
-			msg = strings.Trim(msg, "\r\n")
-			msg = strings.Trim(msg, "\n")
-			console <- msg
-		}
-	}()
 
+	// Accept and serve each connection in a new goroutine
 	go func() {
 		for {
 			conn, err := ln.Accept()
 			if err != nil {
 				panic(err)
 			}
-			incoming <- conn
+			go serve(conn)
 		}
 	}()
 
-	// Accept and serve each connection in a new goroutine
-	for {
-		select {
-		case msg := <-console:
-			if msg == "q" {
-				panic("QUITTING...")
-			} else {
-				fmt.Println("command not recognized")
-			}
-		case conn := <-incoming:
-			go serve(conn)
-		}
-	}
+	// Block until signal (e.g. ctrl-C).
+	// Everything following is clean-up before exit.
+	// DOES NOT WORK WITH MinGW!!
+	<-interruptChannel
+	fmt.Println("ABORTING PROGRAM...")
+	irc.DestroyDB()
+	fmt.Println("Goodbye!")
 }
