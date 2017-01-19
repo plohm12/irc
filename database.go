@@ -72,4 +72,5 @@ func DestroyDB() {
 	if err != nil {
 		panic(err)
 	}
+	db.Close()
 }
