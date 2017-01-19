@@ -323,7 +323,9 @@ func serve(conn net.Conn) {
 // Program entry point
 func main() {
 	var err error
-	interruptChannel := make(chan os.Signal, 2)
+
+	// Capture these signals and send them to the channel
+	interruptChannel := make(chan os.Signal)
 	signal.Notify(interruptChannel,
 		os.Interrupt,
 		syscall.SIGINT,
