@@ -22,7 +22,8 @@ import (
 // Contains unique ID, network connection, and receiving channel
 type Session struct {
 	id   int64
-	conn net.Conn
+	conn *net.Conn
+	msg  *parser.Message
 	ch   chan string
 }
 
@@ -31,6 +32,8 @@ var (
 	db *sql.DB
 	// Maps session IDs to Session struct
 	sessions map[int64]*Session = make(map[int64]*Session)
+	//
+	received chan *Session = make(chan *Session, 10)
 )
 
 // Handles PASS commands by updating the session record's password field.
@@ -265,107 +268,137 @@ func (s *Session) handle(msg *parser.Message) {
 // Handles session termination. Recovers from panicking within serve(). Deletes
 // session record from database before closing connection.
 //TODO safely part from all channels
-func (s *Session) terminate() {
-	defer s.conn.Close()
-	fmt.Println("Terminating session", s.id)
-	if err := recover(); err != nil {
-		fmt.Println("Recovered:", err)
-		//_, _ = conn.Write([]byte(fmt.Sprintf("%v", err)))
-	}
-	delete(sessions, s.id)
-	_, err := db.Exec("DELETE FROM "+irc.TABLE_USERS+" WHERE id=?", s.id)
-	if err != nil {
-		panic(err)
-	}
-}
+//func (s *Session) terminate() {
+//	defer s.conn.Close()
+//	fmt.Println("Terminating session", s.id)
+//	if err := recover(); err != nil {
+//		fmt.Println("Recovered:", err)
+//		//_, _ = conn.Write([]byte(fmt.Sprintf("%v", err)))
+//	}
+//	delete(sessions, s.id)
+//	_, err := db.Exec("DELETE FROM "+irc.TABLE_USERS+" WHERE id=?", s.id)
+//	if err != nil {
+//		panic(err)
+//	}
+//}
 
-// Given a connection, read and print messages to console
-//TODO after parsing message, check state info to determine if connection should stay open
-func serve(conn net.Conn) {
-	p := parser.NewParser(conn)
+//// Given a connection, read and print messages to console
+////TODO after parsing message, check state info to determine if connection should stay open
+//func serve(conn net.Conn) {
+//	p := parser.NewParser(conn)
+//	defer func() {
+//		if err := recover(); err != nil {
+//			fmt.Println("Recovered:", err)
+//		}
+//	}()
+
+//	// Create database record
+////	dbResult, err := db.Exec("INSERT INTO " + irc.TABLE_USERS + " () VALUES();")
+////	if err != nil {
+////		panic(err)
+////	}
+////	id, err := dbResult.LastInsertId()
+////	if err != nil {
+////		panic(err)
+////	}
+
+////	s := &Session{id, conn, make(chan string, irc.CHAN_BUF_SIZE)}
+////	sessions[id] = s
+////	fmt.Println("Created session", id)
+////	defer s.terminate()
+
+//	// Repeatedly handle messages
+////	for {
+////		select {
+////		case outgoing := <-s.ch:
+////			_, _ = conn.Write([]byte(outgoing))
+////		default:
+////			msg, err := p.Parse()
+////			if err != nil {
+////				panic(err)
+////			}
+////			parser.Print(msg) // debug
+////			s.handle(msg)
+////		}
+////	}
+//}
+
+func serve(conn *net.Conn, id int64) {
+	p := parser.NewParser(*conn)
 	defer func() {
 		if err := recover(); err != nil {
 			fmt.Println("Recovered:", err)
 		}
 	}()
 
-	// Create database record
-	dbResult, err := db.Exec("INSERT INTO " + irc.TABLE_USERS + " () VALUES();")
-	if err != nil {
-		panic(err)
-	}
-	id, err := dbResult.LastInsertId()
-	if err != nil {
-		panic(err)
-	}
-
-	s := &Session{id, conn, make(chan string, irc.CHAN_BUF_SIZE)}
-	sessions[id] = s
-	fmt.Println("Created session", id)
-	defer s.terminate()
-
-	// Repeatedly handle messages
 	for {
-		select {
-		case outgoing := <-s.ch:
-			_, _ = conn.Write([]byte(outgoing))
-		default:
-			msg, err := p.Parse()
-			if err != nil {
-				panic(err)
-			}
-			parser.Print(msg) // debug
-			s.handle(msg)
+		msg, err := p.Parse()
+		if err != nil {
+			panic(err)
 		}
+		parser.Print(msg) // debug
+		s := &Session{id, conn, msg, nil}
+		received <- s
 	}
+}
+
+func handleMessages() {
+	for r := range received {
+		go r.handle(r.msg) //.reply()
+	}
+}
+
+func listenAndServe() {
+	listener, err := net.Listen(irc.NETWORK, irc.HOST_ADDRESS)
+	if err != nil {
+		panic(err)
+	}
+
+	for {
+		conn, err := listener.Accept()
+		if err != nil {
+			panic(err)
+		}
+
+		// Create database record
+		dbResult, err := db.Exec("INSERT INTO " + irc.TABLE_USERS + " () VALUES();")
+		if err != nil {
+			panic(err)
+		}
+		id, err := dbResult.LastInsertId()
+		if err != nil {
+			panic(err)
+		}
+		fmt.Println("Created session", id)
+		go serve(&conn, id)
+	}
+}
+
+func makeKillSwitch() chan os.Signal {
+	interrupt := make(chan os.Signal)
+	signal.Notify(interrupt,
+		os.Interrupt,
+		syscall.SIGINT,
+		syscall.SIGKILL,
+		syscall.SIGTERM)
+	return interrupt
 }
 
 // Program entry point
 func main() {
 	var err error
 
-	// Capture these signals and send them to the channel
-	interruptChannel := make(chan os.Signal)
-	signal.Notify(interruptChannel,
-		os.Interrupt,
-		syscall.SIGINT,
-		syscall.SIGKILL,
-		syscall.SIGTERM)
-
+	interrupt := makeKillSwitch()
 	db = irc.CreateDB()
-	defer func() {
-		if r := recover(); r != nil {
-			fmt.Println(r)
-		}
-	}()
-
-	// Test the connection
-	err = db.Ping()
-	if err != nil {
-		panic(err)
-	}
 
 	// Listen for TCP connections on this address and port
-	ln, err := net.Listen(irc.NETWORK, irc.HOST_ADDRESS)
-	if err != nil {
-		panic(err)
-	}
-
-	// Accept and serve each connection in a new goroutine
-	go func() {
-		for {
-			conn, err := ln.Accept()
-			if err != nil {
-				panic(err)
-			}
-			go serve(conn)
-		}
-	}()
+	go listenAndServe()
+	go handleMessages()
 
 	// Block until signal (e.g. ctrl-C).
 	// Everything following is clean-up before exit.
 	// DOES NOT WORK WITH MinGW!!
-	<-interruptChannel
+	<-interrupt
 	fmt.Println("ABORTING PROGRAM...")
 	irc.DestroyDB()
 	fmt.Println("Goodbye!")
