@@ -12,7 +12,7 @@ var (
 	db *sql.DB
 )
 
-// Initialize database tables. Defer destroyDB() immediately following this
+// Initialize database tables. Defer DestroyDB() immediately following this
 // function call.
 func CreateDB() *sql.DB {
 	var err error
@@ -73,4 +73,24 @@ func DestroyDB() {
 		panic(err)
 	}
 	db.Close()
+}
+
+func CreateUser() int64 {
+	dbResult, err := db.Exec("INSERT INTO " + TABLE_USERS + " () VALUES();")
+	if err != nil {
+		panic(err)
+	}
+	id, err := dbResult.LastInsertId()
+	if err != nil {
+		panic(err)
+	}
+	return id
+}
+
+func DeleteUser(id int64) error {
+	_, err := db.Exec("DELETE FROM "+TABLE_USERS+" WHERE id=?", id)
+	if err != nil {
+		return err
+	}
+	return nil
 }

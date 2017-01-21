@@ -158,8 +158,7 @@ func (s *Session) handleUser(msg *parser.Message) {
 
 // Handles QUIT commands by removing session record from database.
 func (s *Session) handleQuit(msg *parser.Message) {
-	_, err := db.Exec("DELETE FROM "+irc.TABLE_USERS+" WHERE id=?", s.id)
-	if err != nil {
+	if err := irc.DeleteUser(s.id); err != nil {
 		panic(err)
 	}
 	s.ch <- irc.SERVER_PREFIX + " " + irc.ERR_CONNCLOSED + irc.CRLF
@@ -375,16 +374,7 @@ func listenAndServe() {
 		if err != nil {
 			panic(err)
 		}
-
-		// Create database record
-		dbResult, err := db.Exec("INSERT INTO " + irc.TABLE_USERS + " () VALUES();")
-		if err != nil {
-			panic(err)
-		}
-		id, err := dbResult.LastInsertId()
-		if err != nil {
-			panic(err)
-		}
+		id := irc.CreateUser()
 		fmt.Println("Created session", id)
 		go serve(&conn, id)
 	}
