@@ -1,5 +1,5 @@
-//TODO convert string returns to error returns
-//TODO implement goroutine channels
+//TODO remove unnecessary code
+//TODO migrate database create/delete
 
 package main
 
@@ -35,6 +35,22 @@ var (
 	//
 	received chan *Session = make(chan *Session, 10)
 )
+
+// Program entry point
+func main() {
+	interrupt := makeKillSwitch()
+	db = irc.CreateDB()
+	go listenAndServe()
+	go handleMessages()
+
+	// Block until signal (e.g. ctrl-C).
+	// Everything following is clean-up before exit.
+	// DOES NOT WORK WITH MinGW!!
+	<-interrupt
+	fmt.Println("ABORTING PROGRAM...")
+	irc.DestroyDB()
+	fmt.Println("Goodbye!")
+}
 
 // Handles PASS commands by updating the session record's password field.
 // Returns an empty string on success or the appropriate error reply.
@@ -382,24 +398,4 @@ func makeKillSwitch() chan os.Signal {
 		syscall.SIGKILL,
 		syscall.SIGTERM)
 	return interrupt
-}
-
-// Program entry point
-func main() {
-	var err error
-
-	interrupt := makeKillSwitch()
-	db = irc.CreateDB()
-
-	// Listen for TCP connections on this address and port
-	go listenAndServe()
-	go handleMessages()
-
-	// Block until signal (e.g. ctrl-C).
-	// Everything following is clean-up before exit.
-	// DOES NOT WORK WITH MinGW!!
-	<-interrupt
-	fmt.Println("ABORTING PROGRAM...")
-	irc.DestroyDB()
-	fmt.Println("Goodbye!")
 }
