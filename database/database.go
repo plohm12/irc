@@ -1,4 +1,5 @@
-//TODO use prepared queries?
+//TODO move login info to config file
+//TODO remove user_channel table and use lookups instead
 
 package database
 
@@ -8,7 +9,7 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 )
 
-// Session ID
+// Session ID, obtained by creating a new user record
 type Id int64
 
 /* Database Definitions */
@@ -38,12 +39,12 @@ func Create() {
 		panic(err)
 	}
 
-	CreateTables()
-	PrepareUserStatements()
-	PrepareChannelStatements()
+	createTables()
+	prepareUserStatements()
+	prepareChannelStatements()
 }
 
-func CreateTables() {
+func createTables() {
 	var err error
 	_, err = db.Exec("CREATE TABLE IF NOT EXISTS " + TABLE_USERS + " (" +
 		"id INT(10) UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY," +
@@ -75,9 +76,9 @@ func CreateTables() {
 func Destroy() {
 	var err error
 
-	CloseUserStatements()
-	CloseChannelStatements()
-	DestroyTables()
+	closeUserStatements()
+	closeChannelStatements()
+	destroyTables()
 
 	_, err = db.Exec("DROP DATABASE " + DB_NAME)
 	if err != nil {
@@ -86,7 +87,7 @@ func Destroy() {
 	db.Close()
 }
 
-func DestroyTables() {
+func destroyTables() {
 	var err error
 	_, err = db.Exec("DROP TABLE " + TABLE_USER_CHANNEL)
 	if err != nil {

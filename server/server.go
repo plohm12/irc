@@ -1,5 +1,4 @@
-//TODO remove unnecessary code
-//TODO migrate database create/delete
+//TODO no zombie goroutines
 
 package main
 
@@ -127,9 +126,7 @@ func (s *Session) handleUser() {
 
 // Handles QUIT commands by removing session record from database.
 func (s *Session) handleQuit() {
-	if err := database.DeleteUser(s.id); err != nil {
-		panic(err)
-	}
+	database.DeleteUser(s.id)
 }
 
 // Sends a message to target, which should be the first parameter. Target is
@@ -197,11 +194,7 @@ func (s *Session) handleJoin() {
 		//s.ch <- irc.SERVER_PREFIX + " " + irc.ERR_NEEDMOREPARAMS + irc.CRLF
 		return
 	}
-	_, err := database.JoinChannel(s.msg.Params.Others[0], s.id)
-	if err != nil {
-		//s.ch <- err.Error() // is this correct?
-		return
-	}
+	_ = database.JoinChannel(s.msg.Params.Others[0], s.id)
 	//s.ch <- irc.SERVER_PREFIX + " " + irc.RPL_TOPIC + " " + s.msg.Params.Others[0] + " :" + topic + irc.CRLF
 }
 
@@ -210,11 +203,7 @@ func (s *Session) handlePart() {
 		//s.ch <- irc.SERVER_PREFIX + " " + irc.ERR_NEEDMOREPARAMS + irc.CRLF
 		return
 	}
-	err := database.PartChannel(s.msg.Params.Others[0], s.id)
-	if err != nil {
-		//s.ch <- err.Error()
-	}
-
+	database.PartChannel(s.msg.Params.Others[0], s.id)
 }
 
 // generic message handler

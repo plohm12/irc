@@ -29,12 +29,11 @@ func CreateUser() Id {
 	return Id(id)
 }
 
-func DeleteUser(id Id) error {
+func DeleteUser(id Id) {
 	_, err := s_DeleteUser.Exec(id)
 	if err != nil {
-		return err
+		panic(err)
 	}
-	return nil
 }
 
 func (id Id) GetPassword() (password string, ok bool) {
@@ -113,7 +112,7 @@ func GetIdByNickname(nickname string) (id Id, ok bool) {
 	return
 }
 
-func PrepareUserStatements() {
+func prepareUserStatements() {
 	var err error
 	s_NewUser, err = db.Prepare("INSERT INTO " + TABLE_USERS + " () VALUES();")
 	if err != nil {
@@ -157,7 +156,7 @@ func PrepareUserStatements() {
 	}
 }
 
-func CloseUserStatements() {
+func closeUserStatements() {
 	s_NewUser.Close()
 	s_DeleteUser.Close()
 	s_GetPass.Close()

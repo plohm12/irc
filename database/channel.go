@@ -2,90 +2,78 @@ package database
 
 import (
 	"database/sql"
-	"errors"
-	"fmt"
-	"irc"
 )
 
 var (
-	s_GetCreator   *sql.Stmt
-	s_GetChanUsers *sql.Stmt
+	s_GetCreator         *sql.Stmt
+	s_GetChanUsers       *sql.Stmt
+	s_GetChanTopic       *sql.Stmt
+	s_CreateChan         *sql.Stmt
+	s_CreateChanUser     *sql.Stmt
+	s_DeleteChan         *sql.Stmt
+	s_DeleteChanUser     *sql.Stmt
+	s_DeleteAllChanUsers *sql.Stmt
 )
 
 // Insert a new channel record into the channels table. Also inserts a new
-// user-channel relationship record in the user_channel table. Returns nil on
-// success, error otherwise.
-func CreateChannel(channelName string, creator Id) error {
+// user-channel relationship record in the user_channel table.
+func CreateChannel(channelName string, creator Id) {
+	var err error
 	//TODO check input before executing
-	// Create new channel record
-	_, err := db.Exec("INSERT INTO "+TABLE_CHANNELS+" (channel_name,creator) VALUES (?,?)", channelName, creator)
+	_, err = s_CreateChan.Exec(channelName, creator)
 	if err != nil {
-		return errors.New(string(irc.SERVER_PREFIX + "  " + irc.ERR_GENERAL + " :" + err.Error() + irc.CRLF))
+		panic(err)
 	}
-	// Create new user-channel relationship
-	_, err = db.Exec("INSERT INTO "+TABLE_USER_CHANNEL+" (user_id,channel_name) VALUES (?,?)", creator, channelName)
+	_, err = s_CreateChanUser.Exec(creator, channelName)
 	if err != nil {
-		return errors.New(string(irc.SERVER_PREFIX + "  " + irc.ERR_GENERAL + " :" + err.Error() + irc.CRLF))
+		panic(err)
 	}
-	return nil
 }
 
 // Removes all user-channel relationship records from user_channel table before
-// deleting the channel from the channels table. Returns nil on success, error
-// otherwise.
-func DestroyChannel(channelName string) error {
-	_, err := db.Exec("DELETE FROM "+TABLE_USER_CHANNEL+" WHERE channel_name=?", channelName)
+// deleting the channel from the channels table.
+func DestroyChannel(channelName string) {
+	s_DeleteAllChanUsers.Exec(channelName)
+	_, err := s_DeleteChan.Exec(channelName)
 	if err != nil {
-		// will return error if PartChannel() removed last user
-		//return errors.New(string(irc.SERVER_PREFIX + "  " + irc.ERR_GENERAL + " :" + err.Error() + irc.CRLF))
+		panic(err)
 	}
-	_, err = db.Exec("DELETE FROM "+TABLE_CHANNELS+" WHERE channel_name=?", channelName)
-	if err != nil {
-		return errors.New(string(irc.SERVER_PREFIX + "  " + irc.ERR_GENERAL + " :" + err.Error() + irc.CRLF))
-	}
-	return nil
 }
 
-func JoinChannel(channelName string, userid Id) (string, error) {
+func JoinChannel(channelName string, userid Id) string {
 	var topic string
-	err := db.QueryRow("SELECT topic FROM "+TABLE_CHANNELS+" WHERE channel_name=?", channelName).Scan(&topic)
+	var err error
+	err = s_GetChanTopic.QueryRow(channelName).Scan(&topic)
 	if err == sql.ErrNoRows {
-		// Create the channel
-		fmt.Println("New channel", channelName)
-		err = CreateChannel(channelName, userid)
-		if err != nil {
-			return "", errors.New(string(irc.SERVER_PREFIX + "  " + irc.ERR_GENERAL + " :" + err.Error() + irc.CRLF))
-		}
+		CreateChannel(channelName, userid)
 	} else if err != nil {
-		return "", errors.New(string(irc.SERVER_PREFIX + "  " + irc.ERR_GENERAL + " :" + err.Error() + irc.CRLF))
+		panic(err)
 	} else {
 		// Add user relationship
-		fmt.Println("User", userid, "joining", channelName)
-		_, err = db.Exec("INSERT INTO "+TABLE_USER_CHANNEL+" (user_id,channel_name) VALUES (?,?)", userid, channelName)
+		_, err = s_CreateChanUser.Exec(userid, channelName)
 		if err != nil {
-			return "", errors.New(string(irc.SERVER_PREFIX + "  " + irc.ERR_GENERAL + " :" + err.Error() + irc.CRLF))
+			panic(err)
 		}
 	}
-	return topic, nil
+	return topic
 }
 
-func PartChannel(channelName string, userid Id) error {
+func PartChannel(channelName string, userid Id) {
+	var err error
 	//TODO query if user is a member of channel
-	_, err := db.Exec("DELETE FROM "+TABLE_USER_CHANNEL+" WHERE channel_name=? AND user_id=?", channelName, userid)
+	_, err = s_DeleteChanUser.Exec(channelName, userid)
 	if err != nil {
-		return errors.New(string(irc.SERVER_PREFIX + "  " + irc.ERR_GENERAL + " :" + err.Error() + irc.CRLF))
+		panic(err)
 	}
-	rows, err := db.Query("SELECT user_id FROM "+TABLE_USER_CHANNEL+" WHERE channel_name=?", channelName)
+	rows, err := s_GetChanUsers.Query(channelName)
 	if err != nil {
-		return errors.New(string(irc.SERVER_PREFIX + "  " + irc.ERR_GENERAL + " :" + err.Error() + irc.CRLF))
+		panic(err)
 	}
 	defer rows.Close()
 	if !rows.Next() {
 		// No more users in the channel, remove it
-		return DestroyChannel(channelName)
+		DestroyChannel(channelName)
 	}
-
-	return nil
 }
 
 func GetChannelCreator(channel string) (creator Id, ok bool) {
@@ -113,7 +101,7 @@ func GetChannelUsers(channel string) (users []Id) {
 	return
 }
 
-func PrepareChannelStatements() {
+func prepareChannelStatements() {
 	var err error
 	s_GetCreator, err = db.Prepare("SELECT creator FROM " + TABLE_CHANNELS + " WHERE channel_name=?")
 	if err != nil {
@@ -123,9 +111,39 @@ func PrepareChannelStatements() {
 	if err != nil {
 		panic(err)
 	}
+	s_GetChanTopic, err = db.Prepare("SELECT topic FROM " + TABLE_CHANNELS + " WHERE channel_name=?")
+	if err != nil {
+		panic(err)
+	}
+	s_CreateChan, err = db.Prepare("INSERT INTO " + TABLE_CHANNELS + " (channel_name,creator) VALUES (?,?)")
+	if err != nil {
+		panic(err)
+	}
+	s_CreateChanUser, err = db.Prepare("INSERT INTO " + TABLE_USER_CHANNEL + " (user_id,channel_name) VALUES (?,?)")
+	if err != nil {
+		panic(err)
+	}
+	s_DeleteChan, err = db.Prepare("DELETE FROM " + TABLE_CHANNELS + " WHERE channel_name=?")
+	if err != nil {
+		panic(err)
+	}
+	s_DeleteChanUser, err = db.Prepare("DELETE FROM " + TABLE_USER_CHANNEL + " WHERE channel_name=? AND user_id=?")
+	if err != nil {
+		panic(err)
+	}
+	s_DeleteAllChanUsers, err = db.Prepare("DELETE FROM " + TABLE_USER_CHANNEL + " WHERE channel_name=?")
+	if err != nil {
+		panic(err)
+	}
 }
 
-func CloseChannelStatements() {
+func closeChannelStatements() {
 	s_GetCreator.Close()
 	s_GetChanUsers.Close()
+	s_GetChanTopic.Close()
+	s_CreateChan.Close()
+	s_CreateChanUser.Close()
+	s_DeleteChan.Close()
+	s_DeleteChanUser.Close()
+	s_DeleteAllChanUsers.Close()
 }
