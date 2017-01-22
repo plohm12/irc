@@ -19,25 +19,26 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 )
 
-// Contains unique client ID, network connection, and a received message
-type Received struct {
+type Client struct {
 	id   database.Id
 	conn *net.Conn
-	msg  *parser.Message
+}
+
+// Contains unique client ID, network connection, and a received message
+type Received struct {
+	client *Client
+	msg    *parser.Message
 }
 
 type Reply struct {
-	id   database.Id
-	conn *net.Conn
-	msg  *string
+	client *Client
+	msg    *[]byte
 }
 
 var (
-	// Maps session IDs to Session struct
-	sessions map[database.Id]*Received = make(map[database.Id]*Received)
-	// buffered channel for receiving communications
-	inbound  chan *Received = make(chan *Received, irc.CHAN_BUF_SIZE)
-	outbound chan *Reply    = make(chan *Reply, irc.CHAN_BUF_SIZE)
+	sessions map[database.Id]*Client = make(map[database.Id]*Client)
+	inbound  chan *Received          = make(chan *Received, irc.CHAN_BUF_SIZE)
+	outbound chan *Reply             = make(chan *Reply, irc.CHAN_BUF_SIZE)
 )
 
 // Program entry point
@@ -45,7 +46,8 @@ func main() {
 	killswitch := makeKillSwitch()
 	database.Create()
 	go listenAndServe()
-	go handleMessages()
+	go receive()
+	go reply()
 	fmt.Println("Welcome to the IRC server!")
 
 	// Block until keyboard interrupt (e.g. ctrl-C).
@@ -53,6 +55,8 @@ func main() {
 	// DOES NOT WORK WITH MinGW!!
 	<-killswitch
 	fmt.Println("ABORTING PROGRAM...")
+	close(inbound)
+	close(outbound)
 	database.Destroy()
 	fmt.Println("Goodbye!")
 }
@@ -71,68 +75,83 @@ func listenAndServe() {
 			panic(err)
 		}
 		id := database.CreateUser()
-		fmt.Println("Created session", id)
-		go serve(&conn, id)
+		fmt.Println("Created client", id)
+		go serve(&Client{id, &conn})
 	}
 }
 
 // Parse messages from a client and queue them for handling
-func serve(conn *net.Conn, id database.Id) {
+func serve(client *Client) {
 	defer func(id database.Id) {
 		if r := recover(); r != nil {
 			fmt.Println("serve(", id, ") error:", r)
 		}
-	}(id)
+	}(client.id)
 
-	p := parser.NewParser(*conn)
+	//TODO have Parse block on channel
+	//TODO add exit channel to prevent zombie goroutines
+	p := parser.NewParser(*client.conn)
 	for {
 		msg, err := p.Parse()
 		if err != nil {
 			panic(err)
 		}
 		parser.Print(msg) // debug
-		s := &Received{id, conn, msg}
+		s := &Received{client, msg}
 		inbound <- s
 	}
 }
 
 // When a message is received, dispatch a goroutine to handle it
-func handleMessages() {
-	for r := range inbound {
-		go r.handle() //.reply()
+func receive() {
+	for ib := range inbound {
+		go ib.handle()
+	}
+}
+
+func reply() {
+	for ob := range outbound {
+		go func(r *Reply) {
+			conn := *r.client.conn
+			msg := *r.msg
+			_, err := conn.Write(msg)
+			if err != nil {
+				panic(err)
+			}
+		}(ob)
 	}
 }
 
 // generic message handler
-func (s *Received) handle() {
-	switch strings.ToUpper(s.msg.Command) {
+func (r *Received) handle() {
+	switch strings.ToUpper(r.msg.Command) {
 	case "QUIT":
-		s.handleQuit()
+		r.handleQuit()
 	case "PASS":
-		s.handlePass()
+		r.handlePass()
 	case "NICK":
-		s.handleNick()
+		r.handleNick()
 	case "USER":
-		s.handleUser()
+		r.handleUser()
 	case "PRIVMSG":
-		s.handlePrivMsg()
+		r.handlePrivMsg()
 	case "JOIN":
-		s.handleJoin()
+		r.handleJoin()
 	case "PART":
-		s.handlePart()
+		r.handlePart()
 	}
 }
 
 // Handles PASS commands by updating the session record's password field.
 // Returns an empty string on success or the appropriate error reply.
-func (s *Received) handlePass() {
-	if s.msg.Params.Num < 1 {
+func (r *Received) handlePass() {
+	if r.msg.Params.Num < 1 {
 		//s.ch <- irc.SERVER_PREFIX + " " + irc.ERR_NEEDMOREPARAMS + irc.CRLF
 		return
 	}
 
 	// Query database for password
-	password, ok := s.id.GetPassword()
+	password, ok := r.client.id.GetPassword()
 	if !ok {
 		// NO USER WITH THAT ID. DO SOMETHING
 		return
@@ -143,12 +162,12 @@ func (s *Received) handlePass() {
 		return
 	}
 
-	s.id.SetPassword(s.msg.Params.Others[0])
+	r.client.id.SetPassword(r.msg.Params.Others[0])
 }
 
 // Handles NICK commands by updating the session record's nickname field.
-func (s *Received) handleNick() {
-	nickname, ok := s.id.GetNickname()
+func (r *Received) handleNick() {
+	nickname, ok := r.client.id.GetNickname()
 	if !ok {
 		// NO USER WITH THAT ID. DO SOMETHING
 		return
@@ -157,28 +176,28 @@ func (s *Received) handleNick() {
 		fmt.Println(nickname)
 	}
 
-	if s.msg.Params.Num < 1 {
+	if r.msg.Params.Num < 1 {
 		//s.ch <- irc.SERVER_PREFIX + " " + irc.ERR_NONICKNAMEGIVEN + irc.CRLF
 		return
 	}
 	//TODO check that nick fits spec
 	//TODO check for collisions
-	s.id.SetNickname(s.msg.Params.Others[0])
+	r.client.id.SetNickname(r.msg.Params.Others[0])
 }
 
 // Handles USER commands by updating session record with username and mode
 // (along with user's real name). Returns a welcome reply on success or the
 // appropriate error reply.
-func (s *Received) handleUser() {
+func (r *Received) handleUser() {
 	var mode int
 
-	username, realname, ok := s.id.GetUsernameRealname()
+	username, realname, ok := r.client.id.GetUsernameRealname()
 	if !ok {
 		// NO USER WITH THAT ID
 		return
 	}
 
-	if s.msg.Params.Num < 4 {
+	if r.msg.Params.Num < 4 {
 		//s.ch <- irc.SERVER_PREFIX + " " + irc.ERR_NEEDMOREPARAMS + irc.CRLF
 		return
 	}
@@ -189,26 +208,27 @@ func (s *Received) handleUser() {
 	}
 
 	//TODO probably check that each field is safe
-	mode, err := strconv.Atoi(s.msg.Params.Others[1])
+	mode, err := strconv.Atoi(r.msg.Params.Others[1])
 	if err != nil {
 		log.Println(err)
 		mode = 0
 	}
 
-	s.id.SetUsernameModeRealname(s.msg.Params.Others[0], s.msg.Params.Others[3], mode)
+	r.client.id.SetUsernameModeRealname(r.msg.Params.Others[0], r.msg.Params.Others[3], mode)
 }
 
 // Handles QUIT commands by removing session record from database.
-func (s *Received) handleQuit() {
-	database.DeleteUser(s.id)
+func (r *Received) handleQuit() {
+	database.DeleteUser(r.client.id)
+	//TODO probably close conn or signal channel exit too
 }
 
 // Sends a message to target, which should be the first parameter. Target is
 // either a nick, user, or channel.
-func (s *Received) handlePrivMsg() {
+func (r *Received) handlePrivMsg() {
 	var buf []byte
 
-	nickname, username, ok := s.id.GetNicknameUsername()
+	nickname, username, ok := r.client.id.GetNicknameUsername()
 	if !ok {
 		//not ok
 	}
@@ -216,18 +236,18 @@ func (s *Received) handlePrivMsg() {
 	fmt.Print(senderPrefix)
 
 	// make sure there is a target and message to send
-	if s.msg.Params.Num < 2 {
+	if r.msg.Params.Num < 2 {
 		//s.ch <- irc.SERVER_PREFIX + " " + irc.ERR_NOTEXTTOSEND + " " + nickname + irc.CRLF
 		return
 	}
 
 	//should this message be broadcast to a channel?
-	if s.msg.Params.Others[0][0] == '#' {
-		if _, ok := database.GetChannelCreator(s.msg.Params.Others[0]); !ok {
+	if r.msg.Params.Others[0][0] == '#' {
+		if _, ok := database.GetChannelCreator(r.msg.Params.Others[0]); !ok {
 			//s.ch <- irc.SERVER_PREFIX + " " + irc.ERR_CANNOTSENDTOCHAN + irc.CRLF
 			return
 		}
-		users := database.GetChannelUsers(s.msg.Params.Others[0])
+		users := database.GetChannelUsers(r.msg.Params.Others[0])
 		for _, userid := range users {
 			fmt.Print(userid)
 			//			targetSession, ok := sessions[userid]
@@ -239,7 +259,7 @@ func (s *Received) handlePrivMsg() {
 	} else {
 		// not a channel message, try to send PM to target user
 		var targetid database.Id
-		targetid, ok := database.GetIdByNickname(s.msg.Params.Others[0])
+		targetid, ok := database.GetIdByNickname(r.msg.Params.Others[0])
 		if !ok {
 			// something's not ok
 		}
@@ -251,8 +271,8 @@ func (s *Received) handlePrivMsg() {
 			return
 		}
 		buf = append(buf, []byte(":"+nickname+"!"+username+"@"+irc.HOST_IP+" ")...)
-		buf = append(buf, []byte(s.msg.Command)...)
-		for _, p := range s.msg.Params.Others {
+		buf = append(buf, []byte(r.msg.Command)...)
+		for _, p := range r.msg.Params.Others {
 			buf = append(buf, []byte(" "+p)...)
 		}
 		buf = append(buf, []byte(irc.CRLF)...)
@@ -263,21 +283,21 @@ func (s *Received) handlePrivMsg() {
 	}
 }
 
-func (s *Received) handleJoin() {
-	if s.msg.Params.Num < 1 {
+func (r *Received) handleJoin() {
+	if r.msg.Params.Num < 1 {
 		//s.ch <- irc.SERVER_PREFIX + " " + irc.ERR_NEEDMOREPARAMS + irc.CRLF
 		return
 	}
-	_ = database.JoinChannel(s.msg.Params.Others[0], s.id)
+	_ = database.JoinChannel(r.msg.Params.Others[0], r.client.id)
 	//s.ch <- irc.SERVER_PREFIX + " " + irc.RPL_TOPIC + " " + s.msg.Params.Others[0] + " :" + topic + irc.CRLF
 }
 
-func (s *Received) handlePart() {
-	if s.msg.Params.Num < 1 {
+func (r *Received) handlePart() {
+	if r.msg.Params.Num < 1 {
 		//s.ch <- irc.SERVER_PREFIX + " " + irc.ERR_NEEDMOREPARAMS + irc.CRLF
 		return
 	}
-	database.PartChannel(s.msg.Params.Others[0], s.id)
+	database.PartChannel(r.msg.Params.Others[0], r.client.id)
 }
 
 // Create a channel for intercepting keyboard interrupts, the purpose of
