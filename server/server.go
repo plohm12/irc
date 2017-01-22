@@ -7,7 +7,8 @@ import (
 	"fmt"
 	"irc"
 	"irc/database"
-	"irc/parser"
+	"irc/message"
+	"irc/message/parser"
 	"log"
 	"net"
 	"os"
@@ -27,7 +28,7 @@ type Client struct {
 // Contains unique client ID, network connection, and a received message
 type Received struct {
 	client *Client
-	msg    *parser.Message
+	msg    *message.Message
 }
 
 type Reply struct {
@@ -37,8 +38,8 @@ type Reply struct {
 
 var (
 	sessions map[database.Id]*Client = make(map[database.Id]*Client)
-	inbound  chan *Received          = make(chan *Received, irc.CHAN_BUF_SIZE)
-	outbound chan *Reply             = make(chan *Reply, irc.CHAN_BUF_SIZE)
+	incoming chan *Received          = make(chan *Received, irc.CHAN_BUF_SIZE)
+	outgoing chan *Reply             = make(chan *Reply, irc.CHAN_BUF_SIZE)
 )
 
 // Program entry point
@@ -55,8 +56,8 @@ func main() {
 	// DOES NOT WORK WITH MinGW!!
 	<-killswitch
 	fmt.Println("ABORTING PROGRAM...")
-	close(inbound)
-	close(outbound)
+	close(incoming)
+	close(outgoing)
 	database.Destroy()
 	fmt.Println("Goodbye!")
 }
@@ -96,21 +97,21 @@ func serve(client *Client) {
 		if err != nil {
 			panic(err)
 		}
-		parser.Print(msg) // debug
+		message.Print(msg) // debug
 		s := &Received{client, msg}
-		inbound <- s
+		incoming <- s
 	}
 }
 
 // When a message is received, dispatch a goroutine to handle it
 func receive() {
-	for ib := range inbound {
-		go ib.handle()
+	for in := range incoming {
+		go in.handle()
 	}
 }
 
 func reply() {
-	for ob := range outbound {
+	for out := range outgoing {
 		go func(r *Reply) {
 			conn := *r.client.conn
 			msg := *r.msg
@@ -118,7 +119,7 @@ func reply() {
 			if err != nil {
 				panic(err)
 			}
-		}(ob)
+		}(out)
 	}
 }
 
@@ -145,6 +146,7 @@ func (r *Received) handle() {
 // Handles PASS commands by updating the session record's password field.
 // Returns an empty string on success or the appropriate error reply.
 func (r *Received) handlePass() {
+	//var reply []byte
 	if r.msg.Params.Num < 1 {
 		//s.ch <- irc.SERVER_PREFIX + " " + irc.ERR_NEEDMOREPARAMS + irc.CRLF
 		return

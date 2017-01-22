@@ -1,5 +1,6 @@
 //TODO move login info to config file
 //TODO remove user_channel table and use lookups instead
+//TODO encrypt passwords
 
 package database
 

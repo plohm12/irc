@@ -1,6 +1,6 @@
-package parser
+package message
 
-import(
+import (
 	"bytes"
 	"fmt"
 )
@@ -17,6 +17,22 @@ type Message struct {
 	*Prefix
 	Command string
 	*Params
+}
+
+func NewMessage() Message {
+	return Message{}
+}
+
+func NewPrefix() Prefix {
+	return Prefix{}
+}
+
+func NewParams() Params {
+	return Params{}
+}
+
+func NewHost() Host {
+	return Host{}
 }
 
 func (m *Message) String() string {
@@ -40,8 +56,8 @@ func (m *Message) String() string {
 
 type Prefix struct {
 	ServerName string
-	Nickname string
-	User string
+	Nickname   string
+	User       string
 	*Host
 }
 
@@ -71,7 +87,7 @@ type Params struct {
 	//Target string
 	//*MsgTo
 	Others []string
-	Num int
+	Num    int
 }
 
 func (p *Params) String() string {

@@ -7,10 +7,11 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"irc/message"
 )
 
-func (p *Parser) Parse() (*Message, error) {
-	msg := &Message{}
+func (p *Parser) Parse() (*message.Message, error) {
+	msg := message.NewMessage()
 
 	fmt.Println("Parsing...")
 
@@ -45,19 +46,19 @@ func (p *Parser) Parse() (*Message, error) {
 		return nil, fmt.Errorf("Scanning message found %q, expected CRLF", lit)
 	}
 
-	return msg, nil
+	return &msg, nil
 }
 
-func (p *Parser) scanPrefix() (*Prefix, error) {
-	prefix := &Prefix{}
+func (p *Parser) scanPrefix() (*message.Prefix, error) {
+	prefix := message.NewPrefix()
 
 	serverName, err := p.scanServerName()
 	if err == nil {
 		prefix.ServerName = serverName
-		return prefix, nil
+		return &prefix, nil
 	} else if prefix.Nickname, err = p.scanNickname(); err == nil {
 		if prefix.User, prefix.Host, err = p.scanPrefixPrime(); err == nil {
-			return prefix, nil
+			return &prefix, nil
 		} else {
 			return nil, err
 		}
@@ -66,7 +67,7 @@ func (p *Parser) scanPrefix() (*Prefix, error) {
 	}
 }
 
-func (p *Parser) scanPrefixPrime() (user string, host *Host, err error) {
+func (p *Parser) scanPrefixPrime() (user string, host *message.Host, err error) {
 	if tok, _ := p.scan(); tok == BANG {
 		if user, err = p.scanUser(); err != nil {
 			return "", nil, err
@@ -80,7 +81,7 @@ func (p *Parser) scanPrefixPrime() (user string, host *Host, err error) {
 	}
 }
 
-func (p *Parser) scanPrefixPrimePrime() (*Host, error) {
+func (p *Parser) scanPrefixPrimePrime() (*message.Host, error) {
 	if tok, _ := p.scan(); tok != AT {
 		p.unscan()
 		return nil, nil
@@ -119,15 +120,15 @@ func (p *Parser) scanCommand() (string, error) {
 	}
 }
 
-func (p *Parser) scanParams() (*Params, error) {
-	params := &Params{}
+func (p *Parser) scanParams() (*message.Params, error) {
+	params := message.NewParams()
 	params.Num = 0
 
 	for i := 0; i < 15; i++ {
 		var param bytes.Buffer
 		if tok, _ := p.scan(); tok != SPACE {
 			p.unscan()
-			return params, nil
+			return &params, nil
 		}
 
 		if tok, lit := p.scan(); tok == COLON {
@@ -136,14 +137,14 @@ func (p *Parser) scanParams() (*Params, error) {
 					p.unscan()
 					params.Others = append(params.Others, param.String())
 					params.Num++
-					return params, nil
+					return &params, nil
 				} else {
 					param.WriteString(lit)
 				}
 			}
 		} else if tok == CRLF {
 			p.unscan()
-			return params, nil
+			return &params, nil
 		} else {
 			param.WriteString(lit)
 		}
@@ -160,25 +161,25 @@ func (p *Parser) scanParams() (*Params, error) {
 		}
 	}
 
-	return params, nil
+	return &params, nil
 }
 
 func (p *Parser) scanServerName() (string, error) {
 	return p.scanHostName()
 }
 
-func (p *Parser) scanHost() (*Host, error) {
-	host := &Host{}
+func (p *Parser) scanHost() (*message.Host, error) {
+	host := message.NewHost()
 
 	hostName, err := p.scanHostName()
 	if err == nil {
 		host.HostName = hostName
-		return host, nil
+		return &host, nil
 	} else {
 		hostAddr, err := p.scanHostAddr()
 		if err == nil {
 			host.HostAddr = hostAddr
-			return host, nil
+			return &host, nil
 		} else {
 			return nil, err
 		}
