@@ -49,6 +49,72 @@ func main() {
 	fmt.Println("Goodbye!")
 }
 
+// Establish network connection, and accept incoming connections. Dispatch
+// goroutines for new connections to separately serve them.
+func listenAndServe() {
+	listener, err := net.Listen(irc.NETWORK, irc.HOST_ADDRESS)
+	if err != nil {
+		panic(err)
+	}
+
+	for {
+		conn, err := listener.Accept()
+		if err != nil {
+			panic(err)
+		}
+		id := database.CreateUser()
+		fmt.Println("Created session", id)
+		go serve(&conn, id)
+	}
+}
+
+// Parse messages from a client and queue them for handling
+func serve(conn *net.Conn, id database.Id) {
+	defer func(id database.Id) {
+		if r := recover(); r != nil {
+			fmt.Println("serve(", id, ") error:", r)
+		}
+	}(id)
+
+	p := parser.NewParser(*conn)
+	for {
+		msg, err := p.Parse()
+		if err != nil {
+			panic(err)
+		}
+		parser.Print(msg) // debug
+		s := &Session{id, conn, msg}
+		received <- s
+	}
+}
+
+// When a message is received, dispatch a goroutine to handle it
+func handleMessages() {
+	for r := range received {
+		go r.handle() //.reply()
+	}
+}
+
+// generic message handler
+func (s *Session) handle() {
+	switch strings.ToUpper(s.msg.Command) {
+	case "QUIT":
+		s.handleQuit()
+	case "PASS":
+		s.handlePass()
+	case "NICK":
+		s.handleNick()
+	case "USER":
+		s.handleUser()
+	case "PRIVMSG":
+		s.handlePrivMsg()
+	case "JOIN":
+		s.handleJoin()
+	case "PART":
+		s.handlePart()
+	}
+}
+
 // Handles PASS commands by updating the session record's password field.
 // Returns an empty string on success or the appropriate error reply.
 func (s *Session) handlePass() {
@@ -204,72 +270,6 @@ func (s *Session) handlePart() {
 		return
 	}
 	database.PartChannel(s.msg.Params.Others[0], s.id)
-}
-
-// generic message handler
-func (s *Session) handle() {
-	switch strings.ToUpper(s.msg.Command) {
-	case "QUIT":
-		s.handleQuit()
-	case "PASS":
-		s.handlePass()
-	case "NICK":
-		s.handleNick()
-	case "USER":
-		s.handleUser()
-	case "PRIVMSG":
-		s.handlePrivMsg()
-	case "JOIN":
-		s.handleJoin()
-	case "PART":
-		s.handlePart()
-	}
-}
-
-// Parse messages from a client and queue them for handling
-func serve(conn *net.Conn, id database.Id) {
-	defer func(id database.Id) {
-		if r := recover(); r != nil {
-			fmt.Println("serve(", id, ") error:", r)
-		}
-	}(id)
-
-	p := parser.NewParser(*conn)
-	for {
-		msg, err := p.Parse()
-		if err != nil {
-			panic(err)
-		}
-		parser.Print(msg) // debug
-		s := &Session{id, conn, msg}
-		received <- s
-	}
-}
-
-// When a message is received, dispatch a goroutine to handle it
-func handleMessages() {
-	for r := range received {
-		go r.handle() //.reply()
-	}
-}
-
-// Establish network connection, and accept incoming connections. Dispatch
-// goroutines for new connections to separately serve them.
-func listenAndServe() {
-	listener, err := net.Listen(irc.NETWORK, irc.HOST_ADDRESS)
-	if err != nil {
-		panic(err)
-	}
-
-	for {
-		conn, err := listener.Accept()
-		if err != nil {
-			panic(err)
-		}
-		id := database.CreateUser()
-		fmt.Println("Created session", id)
-		go serve(&conn, id)
-	}
 }
 
 // Create a channel for intercepting keyboard interrupts, the purpose of
