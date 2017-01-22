@@ -32,13 +32,13 @@ var (
 	db *sql.DB
 	// Maps session IDs to Session struct
 	sessions map[int64]*Session = make(map[int64]*Session)
-	//
+	// buffered channel for receiving communications
 	received chan *Session = make(chan *Session, 10)
 )
 
 // Program entry point
 func main() {
-	interrupt := makeKillSwitch()
+	killswitch := makeKillSwitch()
 	db = irc.CreateDB()
 	go listenAndServe()
 	go handleMessages()
@@ -46,7 +46,7 @@ func main() {
 	// Block until signal (e.g. ctrl-C).
 	// Everything following is clean-up before exit.
 	// DOES NOT WORK WITH MinGW!!
-	<-interrupt
+	<-killswitch
 	fmt.Println("ABORTING PROGRAM...")
 	irc.DestroyDB()
 	fmt.Println("Goodbye!")
@@ -54,9 +54,9 @@ func main() {
 
 // Handles PASS commands by updating the session record's password field.
 // Returns an empty string on success or the appropriate error reply.
-func (s *Session) handlePass(msg *parser.Message) {
+func (s *Session) handlePass() {
 	var password string
-	if msg.Params.Num < 1 {
+	if s.msg.Params.Num < 1 {
 		s.ch <- irc.SERVER_PREFIX + " " + irc.ERR_NEEDMOREPARAMS + irc.CRLF
 		return
 	}
@@ -77,7 +77,7 @@ func (s *Session) handlePass(msg *parser.Message) {
 		s.ch <- irc.SERVER_PREFIX + " " + irc.ERR_ALREADYREGISTRED + irc.CRLF
 		return
 	}
-	_, err = db.Exec("UPDATE users SET password=? WHERE id=?", msg.Params.Others[0], s.id)
+	_, err = db.Exec("UPDATE users SET password=? WHERE id=?", s.msg.Params.Others[0], s.id)
 	if err != nil {
 		log.Println(err)
 		s.ch <- irc.SERVER_PREFIX + " " + irc.ERR_GENERAL + irc.CRLF
@@ -86,7 +86,7 @@ func (s *Session) handlePass(msg *parser.Message) {
 
 // Handles NICK commands by updating the session record's nickname field.
 // Returns an empty string on success or the appropriate error reply.
-func (s *Session) handleNick(msg *parser.Message) {
+func (s *Session) handleNick() {
 	var password string
 	var nickname string
 
@@ -105,13 +105,13 @@ func (s *Session) handleNick(msg *parser.Message) {
 		s.ch <- irc.SERVER_PREFIX + " " + irc.ERR_NOTREGISTERED + irc.CRLF
 		return
 	}
-	if msg.Params.Num < 1 {
+	if s.msg.Params.Num < 1 {
 		s.ch <- irc.SERVER_PREFIX + " " + irc.ERR_NONICKNAMEGIVEN + irc.CRLF
 		return
 	}
 	//TODO check that nick fits spec
 	//TODO check for collisions
-	_, err = db.Exec("UPDATE users SET nickname=? WHERE id=?", msg.Params.Others[0], s.id)
+	_, err = db.Exec("UPDATE users SET nickname=? WHERE id=?", s.msg.Params.Others[0], s.id)
 	if err != nil {
 		log.Println(err)
 		s.ch <- irc.SERVER_PREFIX + " " + irc.ERR_GENERAL + irc.CRLF
@@ -121,7 +121,7 @@ func (s *Session) handleNick(msg *parser.Message) {
 // Handles USER commands by updating session record with username and mode
 // (along with user's real name). Returns a welcome reply on success or the
 // appropriate error reply.
-func (s *Session) handleUser(msg *parser.Message) {
+func (s *Session) handleUser() {
 	var username string
 	var realname string
 	var mode int
@@ -137,7 +137,7 @@ func (s *Session) handleUser(msg *parser.Message) {
 		return
 	}
 
-	if msg.Params.Num < 4 {
+	if s.msg.Params.Num < 4 {
 		s.ch <- irc.SERVER_PREFIX + " " + irc.ERR_NEEDMOREPARAMS + irc.CRLF
 		return
 	}
@@ -147,17 +147,17 @@ func (s *Session) handleUser(msg *parser.Message) {
 	}
 
 	//TODO probably check that each field is safe
-	mode, err = strconv.Atoi(msg.Params.Others[1])
+	mode, err = strconv.Atoi(s.msg.Params.Others[1])
 	if err != nil {
 		log.Println(err)
 		mode = 0
 	}
-	_, err = db.Exec("UPDATE users SET username=?,mode=?,realname=? WHERE id=?", msg.Params.Others[0], mode, msg.Params.Others[3], s.id)
+	_, err = db.Exec("UPDATE users SET username=?,mode=?,realname=? WHERE id=?", s.msg.Params.Others[0], mode, s.msg.Params.Others[3], s.id)
 	s.ch <- irc.SERVER_PREFIX + " " + irc.RPL_WELCOME + " " + username + irc.CRLF
 }
 
 // Handles QUIT commands by removing session record from database.
-func (s *Session) handleQuit(msg *parser.Message) {
+func (s *Session) handleQuit() {
 	if err := irc.DeleteUser(s.id); err != nil {
 		panic(err)
 	}
@@ -166,7 +166,7 @@ func (s *Session) handleQuit(msg *parser.Message) {
 
 // Sends a message to target, which should be the first parameter. Target is
 // either a nick, user, or channel.
-func (s *Session) handlePrivMsg(msg *parser.Message) {
+func (s *Session) handlePrivMsg() {
 	var nickname string
 	var username string
 	var senderPrefix string
@@ -176,20 +176,20 @@ func (s *Session) handlePrivMsg(msg *parser.Message) {
 	senderPrefix = ":" + nickname + "!" + username + "@" + irc.HOST_IP
 
 	// make sure there is a target and message to send
-	if msg.Params.Num < 2 {
+	if s.msg.Params.Num < 2 {
 		s.ch <- irc.SERVER_PREFIX + " " + irc.ERR_NOTEXTTOSEND + " " + nickname + irc.CRLF
 		return
 	}
 
 	//should this message be broadcast to a channel?
-	if msg.Params.Others[0][0] == '#' {
+	if s.msg.Params.Others[0][0] == '#' {
 		var creatorid int64 // dummy value
-		err := db.QueryRow("SELECT creator FROM "+irc.TABLE_CHANNELS+" WHERE channel_name=?", msg.Params.Others[0]).Scan(&creatorid)
+		err := db.QueryRow("SELECT creator FROM "+irc.TABLE_CHANNELS+" WHERE channel_name=?", s.msg.Params.Others[0]).Scan(&creatorid)
 		if err == sql.ErrNoRows {
 			s.ch <- irc.SERVER_PREFIX + " " + irc.ERR_CANNOTSENDTOCHAN + irc.CRLF
 			return
 		}
-		rows, err := db.Query("SELECT user_id FROM "+irc.TABLE_USER_CHANNEL+" WHERE channel_name=?", msg.Params.Others[0])
+		rows, err := db.Query("SELECT user_id FROM "+irc.TABLE_USER_CHANNEL+" WHERE channel_name=?", s.msg.Params.Others[0])
 		if err != nil {
 			//do something
 		}
@@ -201,15 +201,15 @@ func (s *Session) handlePrivMsg(msg *parser.Message) {
 			if !ok {
 				continue
 			}
-			targetSession.ch <- senderPrefix + " " + msg.Command + " " + msg.Params.Others[0] + " " + msg.Params.Others[1] + irc.CRLF
+			targetSession.ch <- senderPrefix + " " + s.msg.Command + " " + s.msg.Params.Others[0] + " " + s.msg.Params.Others[1] + irc.CRLF
 		}
 	} else {
 		// not a channel message, try to send PM to target user
 		var targetid int64
-		err := db.QueryRow("SELECT id FROM "+irc.TABLE_USERS+" WHERE nickname=?", msg.Params.Others[0]).Scan(&targetid)
+		err := db.QueryRow("SELECT id FROM "+irc.TABLE_USERS+" WHERE nickname=?", s.msg.Params.Others[0]).Scan(&targetid)
 		if err == sql.ErrNoRows {
 			log.Println("No user with that ID.")
-			s.ch <- irc.SERVER_PREFIX + " " + irc.ERR_NOSUCHNICK + " " + msg.Params.Others[0] + irc.CRLF
+			s.ch <- irc.SERVER_PREFIX + " " + irc.ERR_NOSUCHNICK + " " + s.msg.Params.Others[0] + irc.CRLF
 			return
 		} else if err != nil {
 			log.Println(err)
@@ -223,8 +223,8 @@ func (s *Session) handlePrivMsg(msg *parser.Message) {
 			return
 		}
 		buf = append(buf, []byte(":"+nickname+"!"+username+"@"+irc.HOST_IP+" ")...)
-		buf = append(buf, []byte(msg.Command)...)
-		for _, p := range msg.Params.Others {
+		buf = append(buf, []byte(s.msg.Command)...)
+		for _, p := range s.msg.Params.Others {
 			buf = append(buf, []byte(" "+p)...)
 		}
 		buf = append(buf, []byte(irc.CRLF)...)
@@ -235,25 +235,25 @@ func (s *Session) handlePrivMsg(msg *parser.Message) {
 	}
 }
 
-func (s *Session) handleJoin(msg *parser.Message) {
-	if msg.Params.Num < 1 {
+func (s *Session) handleJoin() {
+	if s.msg.Params.Num < 1 {
 		s.ch <- irc.SERVER_PREFIX + " " + irc.ERR_NEEDMOREPARAMS + irc.CRLF
 		return
 	}
-	topic, err := irc.JoinChannel(db, msg.Params.Others[0], s.id)
+	topic, err := irc.JoinChannel(db, s.msg.Params.Others[0], s.id)
 	if err != nil {
 		s.ch <- err.Error() // is this correct?
 		return
 	}
-	s.ch <- irc.SERVER_PREFIX + " " + irc.RPL_TOPIC + " " + msg.Params.Others[0] + " :" + topic + irc.CRLF
+	s.ch <- irc.SERVER_PREFIX + " " + irc.RPL_TOPIC + " " + s.msg.Params.Others[0] + " :" + topic + irc.CRLF
 }
 
-func (s *Session) handlePart(msg *parser.Message) {
-	if msg.Params.Num < 1 {
+func (s *Session) handlePart() {
+	if s.msg.Params.Num < 1 {
 		s.ch <- irc.SERVER_PREFIX + " " + irc.ERR_NEEDMOREPARAMS + irc.CRLF
 		return
 	}
-	err := irc.PartChannel(db, msg.Params.Others[0], s.id)
+	err := irc.PartChannel(db, s.msg.Params.Others[0], s.id)
 	if err != nil {
 		s.ch <- err.Error()
 	}
@@ -261,95 +261,32 @@ func (s *Session) handlePart(msg *parser.Message) {
 }
 
 /* generic message handler */
-func (s *Session) handle(msg *parser.Message) {
-	switch strings.ToUpper(msg.Command) {
+func (s *Session) handle() {
+	switch strings.ToUpper(s.msg.Command) {
 	case "QUIT":
-		s.handleQuit(msg)
+		s.handleQuit()
 	case "PASS":
-		s.handlePass(msg)
+		s.handlePass()
 	case "NICK":
-		s.handleNick(msg)
+		s.handleNick()
 	case "USER":
-		s.handleUser(msg)
+		s.handleUser()
 	case "PRIVMSG":
-		s.handlePrivMsg(msg)
+		s.handlePrivMsg()
 	case "JOIN":
-		s.handleJoin(msg)
+		s.handleJoin()
 	case "PART":
-		s.handlePart(msg)
+		s.handlePart()
 	}
 }
 
-// Handles session termination. Recovers from panicking within serve(). Deletes
-// session record from database before closing connection.
-//TODO safely part from all channels
-//func (s *Session) terminate() {
-//	defer s.conn.Close()
-//	fmt.Println("Terminating session", s.id)
-//	if err := recover(); err != nil {
-//		fmt.Println("Recovered:", err)
-//		//_, _ = conn.Write([]byte(fmt.Sprintf("%v", err)))
-//	}
-//	delete(sessions, s.id)
-//	_, err := db.Exec("DELETE FROM "+irc.TABLE_USERS+" WHERE id=?", s.id)
-//	if err != nil {
-//		panic(err)
-//	}
-//}
-
-//// Given a connection, read and print messages to console
-////TODO after parsing message, check state info to determine if connection should stay open
-//func serve(conn net.Conn) {
-//	p := parser.NewParser(conn)
-//	defer func() {
-//		if err := recover(); err != nil {
-//			fmt.Println("Recovered:", err)
-//		}
-//	}()
-
-//	// Create database record
-////	dbResult, err := db.Exec("INSERT INTO " + irc.TABLE_USERS + " () VALUES();")
-////	if err != nil {
-////		panic(err)
-////	}
-////	id, err := dbResult.LastInsertId()
-////	if err != nil {
-////		panic(err)
-////	}
-
-////	s := &Session{id, conn, make(chan string, irc.CHAN_BUF_SIZE)}
-////	sessions[id] = s
-////	fmt.Println("Created session", id)
-////	defer s.terminate()
-
-//	// Repeatedly handle messages
-////	for {
-////		select {
-////		case outgoing := <-s.ch:
-////			_, _ = conn.Write([]byte(outgoing))
-////		default:
-////			msg, err := p.Parse()
-////			if err != nil {
-////				panic(err)
-////			}
-////			parser.Print(msg) // debug
-////			s.handle(msg)
-////		}
-////	}
-//}
-
 func serve(conn *net.Conn, id int64) {
 	p := parser.NewParser(*conn)
-	defer func() {
-		if err := recover(); err != nil {
-			fmt.Println("Recovered:", err)
-		}
-	}()
 
 	for {
 		msg, err := p.Parse()
 		if err != nil {
-			panic(err)
+			fmt.Println(err)
 		}
 		parser.Print(msg) // debug
 		s := &Session{id, conn, msg, nil}
@@ -359,7 +296,7 @@ func serve(conn *net.Conn, id int64) {
 
 func handleMessages() {
 	for r := range received {
-		go r.handle(r.msg) //.reply()
+		go r.handle() //.reply()
 	}
 }
 
