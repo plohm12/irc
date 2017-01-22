@@ -1,6 +1,7 @@
 //TODO move login info to config file
 //TODO remove user_channel table and use lookups instead
 //TODO encrypt passwords
+//TODO consider using bytes.Buffer instead of '+' for concat
 
 package database
 
@@ -14,14 +15,14 @@ import (
 type Id int64
 
 /* Database Definitions */
-const DB_DRIVER string = "mysql"
-const DB_USER string = "root"
-const DB_PASS string = "root"
-const DB_NAME string = "irc"
-const TABLE_USERS string = DB_NAME + ".users"
-const TABLE_CHANNELS string = DB_NAME + ".channels"
-const TABLE_USER_CHANNEL string = DB_NAME + ".user_channel"
-const DB_DATASOURCE string = DB_USER + ":" + DB_PASS + "@/"
+const DB_DRIVER = "mysql"
+const DB_USER = "root"
+const DB_PASS = "root"
+const DB_NAME = "irc"
+const TABLE_USERS = DB_NAME + ".users"
+const TABLE_CHANNELS = DB_NAME + ".channels"
+const TABLE_USER_CHANNEL = DB_NAME + ".user_channel"
+const DB_DATASOURCE = DB_USER + ":" + DB_PASS + "@/"
 
 var (
 	db *sql.DB
