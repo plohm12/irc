@@ -39,6 +39,7 @@ func main() {
 	database.Create()
 	go listenAndServe()
 	go handleMessages()
+	fmt.Println("Welcome to the IRC server!")
 
 	// Block until keyboard interrupt (e.g. ctrl-C).
 	// Everything following is clean-up before exit.

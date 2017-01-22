@@ -40,6 +40,7 @@ func Create() {
 
 	CreateTables()
 	PrepareUserStatements()
+	PrepareChannelStatements()
 }
 
 func CreateTables() {
@@ -75,6 +76,7 @@ func Destroy() {
 	var err error
 
 	CloseUserStatements()
+	CloseChannelStatements()
 	DestroyTables()
 
 	_, err = db.Exec("DROP DATABASE " + DB_NAME)
