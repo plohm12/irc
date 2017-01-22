@@ -8,6 +8,9 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 )
 
+// Session ID
+type Id int64
+
 /* Database Definitions */
 const DB_DRIVER string = "mysql"
 const DB_USER string = "root"
@@ -19,9 +22,7 @@ const TABLE_USER_CHANNEL string = DB_NAME + ".user_channel"
 const DB_DATASOURCE string = DB_USER + ":" + DB_PASS + "@/"
 
 var (
-	db           *sql.DB
-	s_NewUser    *sql.Stmt
-	s_DeleteUser *sql.Stmt
+	db *sql.DB
 )
 
 // Initialize database tables.
@@ -36,6 +37,13 @@ func Create() {
 	if err != nil {
 		panic(err)
 	}
+
+	CreateTables()
+	PrepareUserStatements()
+}
+
+func CreateTables() {
+	var err error
 	_, err = db.Exec("CREATE TABLE IF NOT EXISTS " + TABLE_USERS + " (" +
 		"id INT(10) UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY," +
 		"username VARCHAR(20) DEFAULT ''," +
@@ -60,21 +68,23 @@ func Create() {
 	if err != nil {
 		panic(err)
 	}
-
-	s_NewUser, err := db.Prepare("INSERT INTO " + TABLE_USERS + " () VALUES();")
-	if err != nil {
-		panic(err)
-	}
-	s_DeleteUser, err := db.Prepare("DELETE FROM " + TABLE_USERS + " WHERE id=?")
-	if err != nil {
-		panic(err)
-	}
-
-	return db
 }
 
 // Drops all tables and the database.
 func Destroy() {
+	var err error
+
+	CloseUserStatements()
+	DestroyTables()
+
+	_, err = db.Exec("DROP DATABASE " + DB_NAME)
+	if err != nil {
+		panic(err)
+	}
+	db.Close()
+}
+
+func DestroyTables() {
 	var err error
 	_, err = db.Exec("DROP TABLE " + TABLE_USER_CHANNEL)
 	if err != nil {
@@ -88,9 +98,4 @@ func Destroy() {
 	if err != nil {
 		panic(err)
 	}
-	_, err = db.Exec("DROP DATABASE " + DB_NAME)
-	if err != nil {
-		panic(err)
-	}
-	db.Close()
 }

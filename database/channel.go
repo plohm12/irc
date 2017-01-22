@@ -7,10 +7,15 @@ import (
 	"irc"
 )
 
+var (
+	s_GetCreator   *sql.Stmt
+	s_GetChanUsers *sql.Stmt
+)
+
 // Insert a new channel record into the channels table. Also inserts a new
 // user-channel relationship record in the user_channel table. Returns nil on
 // success, error otherwise.
-func CreateChannel(channelName string, creator int64) error {
+func CreateChannel(channelName string, creator Id) error {
 	//TODO check input before executing
 	// Create new channel record
 	_, err := db.Exec("INSERT INTO "+TABLE_CHANNELS+" (channel_name,creator) VALUES (?,?)", channelName, creator)
@@ -41,7 +46,7 @@ func DestroyChannel(channelName string) error {
 	return nil
 }
 
-func JoinChannel(channelName string, userid int64) (string, error) {
+func JoinChannel(channelName string, userid Id) (string, error) {
 	var topic string
 	err := db.QueryRow("SELECT topic FROM "+TABLE_CHANNELS+" WHERE channel_name=?", channelName).Scan(&topic)
 	if err == sql.ErrNoRows {
@@ -64,7 +69,7 @@ func JoinChannel(channelName string, userid int64) (string, error) {
 	return topic, nil
 }
 
-func PartChannel(channelName string, userid int64) error {
+func PartChannel(channelName string, userid Id) error {
 	//TODO query if user is a member of channel
 	_, err := db.Exec("DELETE FROM "+TABLE_USER_CHANNEL+" WHERE channel_name=? AND user_id=?", channelName, userid)
 	if err != nil {
@@ -81,4 +86,46 @@ func PartChannel(channelName string, userid int64) error {
 	}
 
 	return nil
+}
+
+func GetChannelCreator(channel string) (creator Id, ok bool) {
+	ok = true
+	err := s_GetCreator.QueryRow(channel).Scan(&creator)
+	if err == sql.ErrNoRows {
+		ok = false
+	} else if err != nil {
+		panic(err)
+	}
+	return
+}
+
+func GetChannelUsers(channel string) (users []Id) {
+	rows, err := s_GetChanUsers.Query(channel)
+	if err != nil {
+		panic(err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id Id
+		rows.Scan(&id)
+		users = append(users, id)
+	}
+	return
+}
+
+func PrepareChannelStatements() {
+	var err error
+	s_GetCreator, err = db.Prepare("SELECT creator FROM " + TABLE_CHANNELS + " WHERE channel_name=?")
+	if err != nil {
+		panic(err)
+	}
+	s_GetChanUsers, err = db.Prepare("SELECT user_id FROM " + TABLE_USER_CHANNEL + " WHERE channel_name=?")
+	if err != nil {
+		panic(err)
+	}
+}
+
+func CloseChannelStatements() {
+	s_GetCreator.Close()
+	s_GetChanUsers.Close()
 }
