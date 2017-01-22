@@ -19,7 +19,7 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 )
 
-// Contains unique ID, network connection, and receiving channel
+// Contains unique client ID, network connection, and a received message
 type Session struct {
 	id   int64
 	conn *net.Conn
@@ -43,7 +43,7 @@ func main() {
 	go listenAndServe()
 	go handleMessages()
 
-	// Block until signal (e.g. ctrl-C).
+	// Block until keyboard interrupt (e.g. ctrl-C).
 	// Everything following is clean-up before exit.
 	// DOES NOT WORK WITH MinGW!!
 	<-killswitch
@@ -280,13 +280,19 @@ func (s *Session) handle() {
 	}
 }
 
+// Parse messages from a client and queue them for handling
 func serve(conn *net.Conn, id int64) {
-	p := parser.NewParser(*conn)
+	defer func(id int64) {
+		if r := recover(); r != nil {
+			fmt.Println("serve(", id, ") error:", r)
+		}
+	}(id)
 
+	p := parser.NewParser(*conn)
 	for {
 		msg, err := p.Parse()
 		if err != nil {
-			fmt.Println(err)
+			panic(err)
 		}
 		parser.Print(msg) // debug
 		s := &Session{id, conn, msg, nil}
@@ -294,12 +300,15 @@ func serve(conn *net.Conn, id int64) {
 	}
 }
 
+// When a message is received, dispatch a goroutine to handle it
 func handleMessages() {
 	for r := range received {
 		go r.handle() //.reply()
 	}
 }
 
+// Establish network connection, and accept incoming connections. Dispatch
+// goroutines for new connections to separately serve them.
 func listenAndServe() {
 	listener, err := net.Listen(irc.NETWORK, irc.HOST_ADDRESS)
 	if err != nil {
@@ -317,6 +326,8 @@ func listenAndServe() {
 	}
 }
 
+// Create a channel for intercepting keyboard interrupts, the purpose of
+// which is to prevent unsafe program termination.
 func makeKillSwitch() chan os.Signal {
 	interrupt := make(chan os.Signal)
 	signal.Notify(interrupt,
