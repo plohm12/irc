@@ -1,4 +1,5 @@
 //TODO no zombie goroutines
+//TODO safe exit from Parse()
 
 package main
 
@@ -19,17 +20,24 @@ import (
 )
 
 // Contains unique client ID, network connection, and a received message
-type Session struct {
+type Received struct {
 	id   database.Id
 	conn *net.Conn
 	msg  *parser.Message
 }
 
+type Reply struct {
+	id   database.Id
+	conn *net.Conn
+	msg  *string
+}
+
 var (
 	// Maps session IDs to Session struct
-	sessions map[database.Id]*Session = make(map[database.Id]*Session)
+	sessions map[database.Id]*Received = make(map[database.Id]*Received)
 	// buffered channel for receiving communications
-	received chan *Session = make(chan *Session, 10)
+	inbound  chan *Received = make(chan *Received, irc.CHAN_BUF_SIZE)
+	outbound chan *Reply    = make(chan *Reply, irc.CHAN_BUF_SIZE)
 )
 
 // Program entry point
@@ -83,20 +91,20 @@ func serve(conn *net.Conn, id database.Id) {
 			panic(err)
 		}
 		parser.Print(msg) // debug
-		s := &Session{id, conn, msg}
-		received <- s
+		s := &Received{id, conn, msg}
+		inbound <- s
 	}
 }
 
 // When a message is received, dispatch a goroutine to handle it
 func handleMessages() {
-	for r := range received {
+	for r := range inbound {
 		go r.handle() //.reply()
 	}
 }
 
 // generic message handler
-func (s *Session) handle() {
+func (s *Received) handle() {
 	switch strings.ToUpper(s.msg.Command) {
 	case "QUIT":
 		s.handleQuit()
@@ -117,7 +125,7 @@ func (s *Session) handle() {
 
 // Handles PASS commands by updating the session record's password field.
 // Returns an empty string on success or the appropriate error reply.
-func (s *Session) handlePass() {
+func (s *Received) handlePass() {
 	if s.msg.Params.Num < 1 {
 		//s.ch <- irc.SERVER_PREFIX + " " + irc.ERR_NEEDMOREPARAMS + irc.CRLF
 		return
@@ -139,7 +147,7 @@ func (s *Session) handlePass() {
 }
 
 // Handles NICK commands by updating the session record's nickname field.
-func (s *Session) handleNick() {
+func (s *Received) handleNick() {
 	nickname, ok := s.id.GetNickname()
 	if !ok {
 		// NO USER WITH THAT ID. DO SOMETHING
@@ -161,7 +169,7 @@ func (s *Session) handleNick() {
 // Handles USER commands by updating session record with username and mode
 // (along with user's real name). Returns a welcome reply on success or the
 // appropriate error reply.
-func (s *Session) handleUser() {
+func (s *Received) handleUser() {
 	var mode int
 
 	username, realname, ok := s.id.GetUsernameRealname()
@@ -191,13 +199,13 @@ func (s *Session) handleUser() {
 }
 
 // Handles QUIT commands by removing session record from database.
-func (s *Session) handleQuit() {
+func (s *Received) handleQuit() {
 	database.DeleteUser(s.id)
 }
 
 // Sends a message to target, which should be the first parameter. Target is
 // either a nick, user, or channel.
-func (s *Session) handlePrivMsg() {
+func (s *Received) handlePrivMsg() {
 	var buf []byte
 
 	nickname, username, ok := s.id.GetNicknameUsername()
@@ -255,7 +263,7 @@ func (s *Session) handlePrivMsg() {
 	}
 }
 
-func (s *Session) handleJoin() {
+func (s *Received) handleJoin() {
 	if s.msg.Params.Num < 1 {
 		//s.ch <- irc.SERVER_PREFIX + " " + irc.ERR_NEEDMOREPARAMS + irc.CRLF
 		return
@@ -264,7 +272,7 @@ func (s *Session) handleJoin() {
 	//s.ch <- irc.SERVER_PREFIX + " " + irc.RPL_TOPIC + " " + s.msg.Params.Others[0] + " :" + topic + irc.CRLF
 }
 
-func (s *Session) handlePart() {
+func (s *Received) handlePart() {
 	if s.msg.Params.Num < 1 {
 		//s.ch <- irc.SERVER_PREFIX + " " + irc.ERR_NEEDMOREPARAMS + irc.CRLF
 		return
