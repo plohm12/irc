@@ -4,6 +4,7 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"irc"
 	"irc/database"
@@ -123,6 +124,42 @@ func reply() {
 	}
 }
 
+//TODO use db query to get nick/user for prefix?
+func writeReply(prefix, command string, params ...interface{}) ([]byte, bool) {
+	var buf bytes.Buffer
+	var ok bool = true
+	var err error
+
+	if prefix != "" {
+		buf.WriteString(prefix)
+		buf.WriteByte(' ')
+	} else {
+		ok = false
+	}
+
+	if command != "" {
+		buf.WriteString(command)
+	} else {
+		ok = false
+	}
+
+	for _, p := range params {
+		if s, ok := p.(string); ok {
+			err = buf.WriteByte(' ')
+			if err != nil {
+				ok = false
+			}
+			_, err = buf.WriteString(s)
+			if err != nil {
+				ok = false
+			}
+		}
+	}
+
+	buf.WriteString(irc.CRLF)
+	return buf.Bytes(), ok
+}
+
 // generic message handler
 func (r *Received) handle() {
 	switch strings.ToUpper(r.msg.Command) {
@@ -146,9 +183,13 @@ func (r *Received) handle() {
 // Handles PASS commands by updating the session record's password field.
 // Returns an empty string on success or the appropriate error reply.
 func (r *Received) handlePass() {
-	//var reply []byte
 	if r.msg.Params.Num < 1 {
-		//s.ch <- irc.SERVER_PREFIX + " " + irc.ERR_NEEDMOREPARAMS + irc.CRLF
+		reply, ok := writeReply(irc.SERVER_PREFIX, irc.ERR_NEEDMOREPARAMS)
+		if !ok {
+			fmt.Println("Bad reply:", reply)
+			return
+		}
+		outgoing <- &Reply{r.client, &reply}
 		return
 	}
 
@@ -160,7 +201,12 @@ func (r *Received) handlePass() {
 	}
 
 	if password != "" {
-		//s.ch <- irc.SERVER_PREFIX + " " + irc.ERR_ALREADYREGISTRED + irc.CRLF
+		reply, ok := writeReply(irc.SERVER_PREFIX, irc.ERR_ALREADYREGISTRED)
+		if !ok {
+			fmt.Println("Bad reply:", reply)
+			return
+		}
+		outgoing <- &Reply{r.client, &reply}
 		return
 	}
 
