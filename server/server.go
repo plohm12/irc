@@ -305,9 +305,11 @@ func (r *Received) handleQuit() {
 // Sends a message to target, which should be the first parameter. Target is
 // either a nick, user, or channel.
 func (r *Received) handlePrivMsg() {
+	var recipient string
+
 	nickname, username, ok := r.client.id.GetNicknameUsername()
 	if !ok {
-		//not ok
+		return
 	}
 
 	// make sure there is a target and message to send
@@ -327,19 +329,34 @@ func (r *Received) handlePrivMsg() {
 	}
 
 	//should this message be broadcast to a channel?
-	if r.msg.Params.Others[0][0] == '#' {
-		if _, ok := database.GetChannelCreator(r.msg.Params.Others[0]); !ok {
-			//s.ch <- irc.SERVER_PREFIX + " " + irc.ERR_CANNOTSENDTOCHAN + irc.CRLF
+	recipient = r.msg.Params.Others[0]
+	if message.IsChannel(recipient) {
+		if !database.Check(recipient) {
+			err := r.client.sendReply(getPrefix(), irc.ERR_NOSUCHCHANNEL, recipient, ":No such channel")
+			if err != nil {
+				fmt.Println(err)
+			}
 			return
 		}
-		users := database.GetChannelUsers(r.msg.Params.Others[0])
-		for _, userid := range users {
-			fmt.Print(userid)
-			//			targetSession, ok := sessions[userid]
-			//			if !ok {
-			//				continue
-			//			}
-			//			targetSession.ch <- senderPrefix + " " + s.msg.Command + " " + s.msg.Params.Others[0] + " " + s.msg.Params.Others[1] + irc.CRLF
+		if !r.client.id.IsMember(recipient) {
+			err := r.client.sendReply(getPrefix(), irc.ERR_CANNOTSENDTOCHAN, recipient, ":Cannot send to channel")
+			if err != nil {
+				fmt.Println(err)
+			}
+			return
+		}
+		prefix := getPrefix(nickname, username)
+		members := database.GetChannelUsers(r.msg.Params.Others[0])
+		for _, userid := range members {
+			target, ok := sessions[userid]
+			if !ok {
+				// probably worry about this, idk
+				continue
+			}
+			err := target.sendReply(prefix, r.msg.Command, r.msg.Params.Others)
+			if err != nil {
+				fmt.Println(err)
+			}
 		}
 	} else {
 		// not a channel message, try to send PM to target user

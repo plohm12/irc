@@ -1,3 +1,6 @@
+//TODO get rid of the Params.Others bullshit
+//TODO (p Param) IsChannel() instead of current implementation
+
 package message
 
 import (
@@ -33,6 +36,17 @@ func NewParams() Params {
 
 func NewHost() Host {
 	return Host{}
+}
+
+func IsChannel(param string) bool {
+	switch param[0] {
+	case '#':
+	case '&':
+	case '+':
+	case '!':
+		return true
+	}
+	return false
 }
 
 func (m *Message) String() string {
