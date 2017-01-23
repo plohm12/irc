@@ -11,7 +11,7 @@ irc implements the IRC protocol to facilitate communication between clients via 
 
 To build this project, make sure you have Go installed, then in a console enter:
 
-	`go install -v all`
+	go install -v all
 
 # server
 
