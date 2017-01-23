@@ -116,6 +116,7 @@ func reply() {
 		go func(r *Reply) {
 			conn := *r.client.conn
 			msg := *r.msg
+			fmt.Printf("%s", msg) //debug
 			_, err := conn.Write(msg)
 			if err != nil {
 				panic(err)
@@ -125,7 +126,7 @@ func reply() {
 }
 
 //TODO use db query to get nick/user for prefix?
-func writeReply(prefix, command string, params ...interface{}) ([]byte, bool) {
+func (c *Client) sendReply(prefix, command string, params ...interface{}) error {
 	var buf bytes.Buffer
 	var ok bool = true
 	var err error
@@ -157,7 +158,29 @@ func writeReply(prefix, command string, params ...interface{}) ([]byte, bool) {
 	}
 
 	buf.WriteString(irc.CRLF)
-	return buf.Bytes(), ok
+
+	if !ok {
+		return fmt.Errorf("Bad reply: %s", buf.String())
+	}
+	reply := buf.Bytes()
+	outgoing <- &Reply{c, &reply}
+	return nil
+}
+
+//TODO should this accept more than 0 or 2 args?
+func getPrefix(args ...string) string {
+	var prefix bytes.Buffer
+	prefix.WriteByte(':')
+	if len(args) == 2 {
+		prefix.WriteString(args[0])
+		prefix.WriteByte('!')
+		prefix.WriteString(args[1])
+		prefix.WriteByte('@')
+	} else if len(args) != 0 {
+		panic("Incorrect usage of getPrefix")
+	}
+	prefix.WriteString(irc.HOST_IP)
+	return prefix.String()
 }
 
 // generic message handler
@@ -184,12 +207,10 @@ func (r *Received) handle() {
 // Returns an empty string on success or the appropriate error reply.
 func (r *Received) handlePass() {
 	if r.msg.Params.Num < 1 {
-		reply, ok := writeReply(irc.SERVER_PREFIX, irc.ERR_NEEDMOREPARAMS)
-		if !ok {
-			fmt.Println("Bad reply:", reply)
-			return
+		err := r.client.sendReply(getPrefix(), irc.ERR_NEEDMOREPARAMS)
+		if err != nil {
+			fmt.Println(err)
 		}
-		outgoing <- &Reply{r.client, &reply}
 		return
 	}
 
@@ -201,12 +222,10 @@ func (r *Received) handlePass() {
 	}
 
 	if password != "" {
-		reply, ok := writeReply(irc.SERVER_PREFIX, irc.ERR_ALREADYREGISTRED)
-		if !ok {
-			fmt.Println("Bad reply:", reply)
-			return
+		err := r.client.sendReply(getPrefix(), irc.ERR_ALREADYREGISTRED)
+		if err != nil {
+			fmt.Println(err)
 		}
-		outgoing <- &Reply{r.client, &reply}
 		return
 	}
 
@@ -225,7 +244,10 @@ func (r *Received) handleNick() {
 	}
 
 	if r.msg.Params.Num < 1 {
-		//s.ch <- irc.SERVER_PREFIX + " " + irc.ERR_NONICKNAMEGIVEN + irc.CRLF
+		err := r.client.sendReply(getPrefix(), irc.ERR_NONICKNAMEGIVEN)
+		if err != nil {
+			fmt.Println(err)
+		}
 		return
 	}
 	//TODO check that nick fits spec
@@ -239,19 +261,24 @@ func (r *Received) handleNick() {
 func (r *Received) handleUser() {
 	var mode int
 
-	username, realname, ok := r.client.id.GetUsernameRealname()
+	username, _, ok := r.client.id.GetUsernameRealname()
 	if !ok {
 		// NO USER WITH THAT ID
 		return
 	}
 
 	if r.msg.Params.Num < 4 {
-		//s.ch <- irc.SERVER_PREFIX + " " + irc.ERR_NEEDMOREPARAMS + irc.CRLF
+		err := r.client.sendReply(getPrefix(), irc.ERR_NEEDMOREPARAMS)
+		if err != nil {
+			fmt.Println(err)
+		}
 		return
 	}
 	if username != "" {
-		fmt.Println(realname)
-		//s.ch <- irc.SERVER_PREFIX + " " + irc.ERR_ALREADYREGISTRED + irc.CRLF
+		err := r.client.sendReply(getPrefix(), irc.ERR_ALREADYREGISTRED)
+		if err != nil {
+			fmt.Println(err)
+		}
 		return
 	}
 
@@ -263,29 +290,39 @@ func (r *Received) handleUser() {
 	}
 
 	r.client.id.SetUsernameModeRealname(r.msg.Params.Others[0], r.msg.Params.Others[3], mode)
+	err = r.client.sendReply(getPrefix(), irc.RPL_WELCOME, "Welcome to the Internet Relay Network!")
+	if err != nil {
+		fmt.Println(err)
+	}
 }
 
 // Handles QUIT commands by removing session record from database.
 func (r *Received) handleQuit() {
 	database.DeleteUser(r.client.id)
-	//TODO probably close conn or signal channel exit too
+	//TODO probably close conn or signal channel exit
 }
 
 // Sends a message to target, which should be the first parameter. Target is
 // either a nick, user, or channel.
 func (r *Received) handlePrivMsg() {
-	var buf []byte
-
 	nickname, username, ok := r.client.id.GetNicknameUsername()
 	if !ok {
 		//not ok
 	}
-	senderPrefix := ":" + nickname + "!" + username + "@" + irc.HOST_IP
-	fmt.Print(senderPrefix)
 
 	// make sure there is a target and message to send
+	if r.msg.Params.Num < 1 {
+		err := r.client.sendReply(getPrefix(), irc.ERR_NORECIPIENT, ":No recipient for", r.msg.Command)
+		if err != nil {
+			fmt.Println(err)
+		}
+		return
+	}
 	if r.msg.Params.Num < 2 {
-		//s.ch <- irc.SERVER_PREFIX + " " + irc.ERR_NOTEXTTOSEND + " " + nickname + irc.CRLF
+		err := r.client.sendReply(getPrefix(), irc.ERR_NOTEXTTOSEND, ":No text to send")
+		if err != nil {
+			fmt.Println(err)
+		}
 		return
 	}
 
@@ -309,40 +346,82 @@ func (r *Received) handlePrivMsg() {
 		var targetid database.Id
 		targetid, ok := database.GetIdByNickname(r.msg.Params.Others[0])
 		if !ok {
-			// something's not ok
+			err := r.client.sendReply(getPrefix(), irc.ERR_NOSUCHNICK, r.msg.Params.Others[0], ":No such nick")
+			if err != nil {
+				fmt.Println(err)
+			}
+			return
 		}
 
 		targetSession, ok := sessions[targetid]
 		if !ok {
-			fmt.Print(targetSession)
-			//s.ch <- irc.SERVER_PREFIX + " " + irc.ERR_NORECIPIENT + irc.CRLF
+			//target isn't in the system!! HALP!
 			return
 		}
-		buf = append(buf, []byte(":"+nickname+"!"+username+"@"+irc.HOST_IP+" ")...)
-		buf = append(buf, []byte(r.msg.Command)...)
-		for _, p := range r.msg.Params.Others {
-			buf = append(buf, []byte(" "+p)...)
+		prefix := getPrefix(nickname, username)
+		err := targetSession.sendReply(prefix, r.msg.Command, r.msg.Params.Others)
+		if err != nil {
+			fmt.Println(err)
 		}
-		buf = append(buf, []byte(irc.CRLF)...)
-		fmt.Print(string(buf)) // debug
-		//_, _ = targetSession.conn.Write(buf)
-		//targetSession.ch <- string(buf)
-
 	}
 }
 
 func (r *Received) handleJoin() {
+	var err error
+
 	if r.msg.Params.Num < 1 {
-		//s.ch <- irc.SERVER_PREFIX + " " + irc.ERR_NEEDMOREPARAMS + irc.CRLF
+		err = r.client.sendReply(getPrefix(), irc.ERR_NEEDMOREPARAMS)
+		if err != nil {
+			fmt.Println(err)
+		}
 		return
 	}
-	_ = database.JoinChannel(r.msg.Params.Others[0], r.client.id)
-	//s.ch <- irc.SERVER_PREFIX + " " + irc.RPL_TOPIC + " " + s.msg.Params.Others[0] + " :" + topic + irc.CRLF
+	topic := database.JoinChannel(r.msg.Params.Others[0], r.client.id)
+	nickname, username, _ := r.client.id.GetNicknameUsername()
+	prefix := getPrefix(nickname, username)
+	members := database.GetChannelUsers(r.msg.Params.Others[0])
+	for _, m := range members {
+		client := sessions[m]
+		err = client.sendReply(prefix, r.msg.Command, r.msg.Params.Others[0])
+		if err != nil {
+			fmt.Println(err)
+		}
+	}
+
+	if topic == "" {
+		err = r.client.sendReply(getPrefix(), irc.RPL_NOTOPIC, r.msg.Params.Others[0], ":No topic set")
+		if err != nil {
+			fmt.Println(err)
+		}
+	} else {
+		err = r.client.sendReply(getPrefix(), irc.RPL_TOPIC, r.msg.Params.Others[0], ':', topic)
+		if err != nil {
+			fmt.Println(err)
+		}
+	}
+	//TODO implement RPL_NAMREPLY
 }
 
 func (r *Received) handlePart() {
 	if r.msg.Params.Num < 1 {
-		//s.ch <- irc.SERVER_PREFIX + " " + irc.ERR_NEEDMOREPARAMS + irc.CRLF
+		err := r.client.sendReply(getPrefix(), irc.ERR_NEEDMOREPARAMS)
+		if err != nil {
+			fmt.Println(err)
+		}
+		return
+	}
+	if !database.Check(r.msg.Params.Others[0]) {
+		err := r.client.sendReply(getPrefix(), irc.ERR_NOSUCHCHANNEL, r.msg.Params.Others[0], ":No such channel")
+		if err != nil {
+			fmt.Println(err)
+		}
+		return
+	}
+	if !r.client.id.IsMember(r.msg.Params.Others[0]) {
+		err := r.client.sendReply(getPrefix(), irc.ERR_NOTONCHANNEL, r.msg.Params.Others[0], ":Not on channel")
+		if err != nil {
+			fmt.Println(err)
+		}
 		return
 	}
 	database.PartChannel(r.msg.Params.Others[0], r.client.id)
