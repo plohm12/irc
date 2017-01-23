@@ -2,6 +2,7 @@
 //TODO remove user_channel table and use lookups instead
 //TODO encrypt passwords
 //TODO consider using bytes.Buffer instead of '+' for concat
+//TODO add types for channel, nick, etc for better querying like Id
 
 package database
 

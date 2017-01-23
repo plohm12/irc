@@ -6,6 +6,7 @@ import (
 
 var (
 	s_GetCreator         *sql.Stmt
+	s_GetChanUser        *sql.Stmt
 	s_GetChanUsers       *sql.Stmt
 	s_GetChanTopic       *sql.Stmt
 	s_CreateChan         *sql.Stmt
@@ -60,7 +61,6 @@ func JoinChannel(channelName string, userid Id) string {
 
 func PartChannel(channelName string, userid Id) {
 	var err error
-	//TODO query if user is a member of channel
 	_, err = s_DeleteChanUser.Exec(channelName, userid)
 	if err != nil {
 		panic(err)
@@ -87,6 +87,23 @@ func GetChannelCreator(channel string) (creator Id, ok bool) {
 	return
 }
 
+// Check if channel exists with a dummy query
+func Check(channel string) bool {
+	_, ok := GetChannelCreator(channel)
+	return ok
+}
+
+func (id Id) IsMember(channel string) bool {
+	var dummy Id
+	err := s_GetChanUser.QueryRow(channel, id).Scan(&dummy)
+	if err == sql.ErrNoRows {
+		return false
+	} else if err != nil {
+		panic(err)
+	}
+	return true
+}
+
 func GetChannelUsers(channel string) (users []Id) {
 	rows, err := s_GetChanUsers.Query(channel)
 	if err != nil {
@@ -104,6 +121,10 @@ func GetChannelUsers(channel string) (users []Id) {
 func prepareChannelStatements() {
 	var err error
 	s_GetCreator, err = db.Prepare("SELECT creator FROM " + TABLE_CHANNELS + " WHERE channel_name=?")
+	if err != nil {
+		panic(err)
+	}
+	s_GetChanUser, err = db.Prepare("SELECT user_id FROM " + TABLE_USER_CHANNEL + " WHERE channel_name=? AND user_id=?")
 	if err != nil {
 		panic(err)
 	}
@@ -139,6 +160,7 @@ func prepareChannelStatements() {
 
 func closeChannelStatements() {
 	s_GetCreator.Close()
+	s_GetChanUser.Close()
 	s_GetChanUsers.Close()
 	s_GetChanTopic.Close()
 	s_CreateChan.Close()
