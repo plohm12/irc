@@ -10,7 +10,6 @@ const NETWORK = "tcp"
 const HOST_IP = "127.0.0.1"
 const HOST_PORT = "6667"
 const HOST_ADDRESS = HOST_IP + ":" + HOST_PORT
-const SERVER_PREFIX = ":" + HOST_IP
 
 /* IRC Reply codes per RFC 2812 */
 const RPL_NOP = "000" //nop
