@@ -4,14 +4,14 @@ irc implements the IRC protocol to facilitate communication between clients via 
 
 # dependencies
 
-- This project is compiled with go1.7. You can get it [here](https://golang.org/dl/)
-- The database runs on MySQL 5.7. Download it from [here](https://dev.mysql.com/downloads/mysql/)
+- This project is compiled with go1.7. You can get it [here](https://golang.org/dl/).
+- The database runs on MySQL 5.7. Download it from [here](https://dev.mysql.com/downloads/mysql/).
 
 # installation
 
 To build this project, make sure you have Go installed, then in a console enter:
 
-`go install -v all`
+	`go install -v all`
 
 # server
 
