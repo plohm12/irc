@@ -41,8 +41,11 @@ func NewHost() Host {
 func IsChannel(param string) bool {
 	switch param[0] {
 	case '#':
+		fallthrough
 	case '&':
+		fallthrough
 	case '+':
+		fallthrough
 	case '!':
 		return true
 	}
