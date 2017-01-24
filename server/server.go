@@ -43,10 +43,8 @@ var (
 	outgoing chan *Reply             = make(chan *Reply, irc.CHAN_BUF_SIZE)
 )
 
-const ignoreDebug = false
-
 func debug(a ...interface{}) {
-	if !ignoreDebug {
+	if !irc.IgnoreDebug {
 		fmt.Println(a...)
 	}
 }

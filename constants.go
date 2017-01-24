@@ -1,5 +1,7 @@
 package irc
 
+const IgnoreDebug = false
+
 const BUFFER_SIZE = 512
 const CHAN_BUF_SIZE = 10 // buffer size for Go channels
 const DEFAULT_USER = "guest"
