@@ -25,7 +25,6 @@ var (
 	console  *bufio.Reader = bufio.NewReader(os.Stdin)
 	input    chan string   = make(chan string, irc.CHAN_BUF_SIZE)
 	incoming chan string   = make(chan string, irc.CHAN_BUF_SIZE)
-	reprint  chan int      = make(chan int, irc.CHAN_BUF_SIZE)
 )
 
 // Program entry point
@@ -56,16 +55,13 @@ func main() {
 	}(conn)
 
 	go receiveMessages()
-	go getInput()
-	go printBuffer()
 
-	//register()
+	register()
 
 	for {
 		select {
 		case message = <-incoming:
-			fmt.Print(irc.CRLF, message)
-			reprint <- 1
+			fmt.Print(message)
 		case message = <-input:
 			command, params := getCommand(message)
 			//if command != "" {
@@ -91,15 +87,8 @@ func getInput() {
 		if r == '\n' {
 			input <- cbuf.String()
 			cbuf.Reset()
-			fmt.Print("> ")
+			return
 		}
-	}
-}
-
-func printBuffer() {
-	for {
-		<-reprint
-		fmt.Print('>', cbuf.String())
 	}
 }
 
@@ -174,37 +163,6 @@ func unrecognizedCommand(command string) {
 	fmt.Println(`Do you need "/help"?`)
 }
 
-// Currently not used.
-func handleResponse() bool {
-	buf := make([]byte, irc.BUFFER_SIZE)
-	conn := *conn
-
-	if read, _ := conn.Read(buf); read > 0 {
-		switch string(buf[:read]) {
-		case irc.RPL_NOP:
-			return true
-		case irc.ERR_NEEDMOREPARAMS:
-			fmt.Println("Not enough parameters.")
-			return false
-		case irc.ERR_ALREADYREGISTRED:
-			fmt.Println("Unauthorized command (already registered).")
-			return false
-		case irc.ERR_NOTREGISTERED:
-			fmt.Println("You have not registered.")
-			return false
-		case irc.ERR_NONICKNAMEGIVEN:
-			fmt.Println("You must specify your nickname.")
-			return false
-		case irc.ERR_GENERAL:
-			fmt.Println("General error. Do you need /HELP?")
-			return false
-		default:
-			fmt.Printf("Response string: %s\n", buf)
-		}
-	}
-	return true
-}
-
 // Attempt to parse a command from the input, which must be escaped by "/".
 // Currently, commands are the only valid input.
 func getCommand(msg string) (command string, trailing string) {
@@ -263,54 +221,82 @@ func handlePrivMsg(params string) error {
 
 // Prompts the user for a session password, nickname, username, and real name.
 // Sends PASS, NICK, & USER messages to server to establish a session.
-//func register() {
-//	// Loop until password is set
-//	for password == "" {
-//		fmt.Print("Create a session password:\n> ")
-//		s := getInput()
-//		if strings.ToUpper(s) == "/HELP" {
-//			continue
+func register() {
+	// Loop until password is set
+	for password == "" {
+		fmt.Print("Create a session password:")
+		go getInput()
+		s := <-input
+		if strings.ToUpper(s) == "/HELP\r\n" {
+			continue
+		}
+		sendMsg("PASS", s)
+		//		if handleResponse() {
+		//			fmt.Println("Password success!")
+		//			password = s
+		//		}
+		password = s
+	}
+	// Loop until nickname is set
+	for nick == "" {
+		fmt.Print("Enter your nickname:")
+		go getInput()
+		s := <-input
+		if strings.ToUpper(s) == "/HELP\r\n" {
+			continue
+		}
+		sendMsg("NICK", s)
+		// handle server response here
+		nick = s
+	}
+	fmt.Print("Enter your username (optional):")
+	go getInput()
+	s := <-input
+	if s == "" {
+		user = irc.DEFAULT_USER
+	} else {
+		user = s
+	}
+	// Loop until realname is set
+	for realname == "" {
+		fmt.Print("Enter your real name:")
+		go getInput()
+		s := <-input
+		if strings.ToUpper(s) == "/HELP\r\n" {
+			continue
+		}
+		realname = s
+	}
+	sendMsg("USER", user, 0, "*", ":"+realname)
+}
+
+// Currently not used.
+//func handleResponse() bool {
+//	buf := make([]byte, irc.BUFFER_SIZE)
+//	conn := *conn
+
+//	if read, _ := conn.Read(buf); read > 0 {
+//		switch string(buf[:read]) {
+//		case irc.RPL_NOP:
+//			return true
+//		case irc.ERR_NEEDMOREPARAMS:
+//			fmt.Println("Not enough parameters.")
+//			return false
+//		case irc.ERR_ALREADYREGISTRED:
+//			fmt.Println("Unauthorized command (already registered).")
+//			return false
+//		case irc.ERR_NOTREGISTERED:
+//			fmt.Println("You have not registered.")
+//			return false
+//		case irc.ERR_NONICKNAMEGIVEN:
+//			fmt.Println("You must specify your nickname.")
+//			return false
+//		case irc.ERR_GENERAL:
+//			fmt.Println("General error. Do you need /HELP?")
+//			return false
+//		default:
+//			fmt.Printf("Response string: %s\n", buf)
 //		}
-//		sendMsg("PASS", s)
-//		//		if handleResponse() {
-//		//			fmt.Println("Password success!")
-//		//			password = s
-//		//		}
-//		password = s
 //	}
-//	// Loop until nickname is set
-//	for nick == "" {
-//		fmt.Print("Enter your nickname:\n> ")
-//		s := getInput()
-//		if strings.ToUpper(s) == "/HELP" {
-//			continue
-//		}
-//		sendMsg("NICK", s)
-//		// handle server response here
-//		nick = s
-//	}
-//	// Loop until username is set
-//	for {
-//		fmt.Print("Enter your username (optional):\n> ")
-//		s := getInput()
-//		if strings.ToUpper(s) == "/HELP" {
-//			continue // only loops if user types help
-//		}
-//		if s == "" {
-//			user = irc.DEFAULT_USER
-//		} else {
-//			user = s
-//		}
-//		break
-//	}
-//	// Loop until realname is set
-//	for realname == "" {
-//		fmt.Print("Enter your real name:\n> ")
-//		s := getInput()
-//		if strings.ToUpper(s) == "/HELP" {
-//			continue
-//		}
-//		realname = s
-//	}
-//	sendMsg("USER", user, 0, "*", ":"+realname)
+//	return true
 //}
