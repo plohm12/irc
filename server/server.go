@@ -105,7 +105,7 @@ func serve(client *Client) {
 	for {
 		msg, err := p.Parse()
 		if err != nil {
-			panic(err)
+			debug(err)
 		}
 		message.Print(msg) // debug
 		s := &Received{client, msg}
