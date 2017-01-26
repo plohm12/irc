@@ -28,12 +28,6 @@ var (
 	reprint  chan int      = make(chan int, irc.CHAN_BUF_SIZE)
 )
 
-func debug(a ...interface{}) {
-	if !irc.IgnoreDebug {
-		fmt.Println(a...)
-	}
-}
-
 // Program entry point
 func main() {
 	var message string
@@ -55,7 +49,7 @@ func main() {
 			if err == "/Q" || err == "/QUIT" {
 				sendMsg("QUIT")
 			} else {
-				debug("Recovered:", err)
+				irc.Debug("Recovered:", err)
 			}
 		}
 		conn.Close()

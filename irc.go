@@ -1,5 +1,8 @@
 package irc
 
+import "fmt"
+
+// Set to false to enable debugging statements, true to disable.
 const IgnoreDebug = false
 
 const BUFFER_SIZE = 512
@@ -159,3 +162,10 @@ const ERR_NOOPERHOST = "491"
 const ERR_GENERAL = "500" // general error reply
 const ERR_UMODEUNKNOWNFLAG = "501"
 const ERR_USERSDONTMATCH = "502"
+
+// Print debugging information if enabled
+func Debug(a ...interface{}) {
+	if !IgnoreDebug {
+		fmt.Println(a...)
+	}
+}
