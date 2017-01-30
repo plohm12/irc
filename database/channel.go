@@ -2,6 +2,7 @@ package database
 
 import (
 	"database/sql"
+	"irc/message"
 )
 
 var (
@@ -18,7 +19,7 @@ var (
 
 // Insert a new channel record into the channels table. Also inserts a new
 // user-channel relationship record in the user_channel table.
-func CreateChannel(channelName string, creator Id) {
+func CreateChannel(channelName message.Param, creator Id) {
 	var err error
 	//TODO check input before executing
 	_, err = s_CreateChan.Exec(channelName, creator)
@@ -33,7 +34,7 @@ func CreateChannel(channelName string, creator Id) {
 
 // Removes all user-channel relationship records from user_channel table before
 // deleting the channel from the channels table.
-func DestroyChannel(channelName string) {
+func DestroyChannel(channelName message.Param) {
 	s_DeleteAllChanUsers.Exec(channelName)
 	_, err := s_DeleteChan.Exec(channelName)
 	if err != nil {
@@ -41,7 +42,7 @@ func DestroyChannel(channelName string) {
 	}
 }
 
-func JoinChannel(channelName string, userid Id) string {
+func JoinChannel(channelName message.Param, userid Id) string {
 	var topic string
 	var err error
 	err = s_GetChanTopic.QueryRow(channelName).Scan(&topic)
@@ -59,7 +60,7 @@ func JoinChannel(channelName string, userid Id) string {
 	return topic
 }
 
-func PartChannel(channelName string, userid Id) {
+func PartChannel(channelName message.Param, userid Id) {
 	var err error
 	_, err = s_DeleteChanUser.Exec(channelName, userid)
 	if err != nil {
@@ -76,7 +77,7 @@ func PartChannel(channelName string, userid Id) {
 	}
 }
 
-func GetChannelCreator(channel string) (creator Id, ok bool) {
+func GetChannelCreator(channel message.Param) (creator Id, ok bool) {
 	ok = true
 	err := s_GetCreator.QueryRow(channel).Scan(&creator)
 	if err == sql.ErrNoRows {
@@ -88,12 +89,12 @@ func GetChannelCreator(channel string) (creator Id, ok bool) {
 }
 
 // Check if channel exists with a dummy query
-func Check(channel string) bool {
+func Check(channel message.Param) bool {
 	_, ok := GetChannelCreator(channel)
 	return ok
 }
 
-func (id Id) IsMember(channel string) bool {
+func (id Id) IsMemberOf(channel message.Param) bool {
 	var dummy Id
 	err := s_GetChanUser.QueryRow(channel, id).Scan(&dummy)
 	if err == sql.ErrNoRows {
@@ -104,7 +105,7 @@ func (id Id) IsMember(channel string) bool {
 	return true
 }
 
-func GetChannelUsers(channel string) (users []Id) {
+func GetChannelUsers(channel message.Param) (users []Id) {
 	rows, err := s_GetChanUsers.Query(channel)
 	if err != nil {
 		panic(err)

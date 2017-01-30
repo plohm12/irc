@@ -2,6 +2,7 @@ package database
 
 import (
 	"database/sql"
+	"irc/message"
 )
 
 var (
@@ -47,8 +48,9 @@ func (id Id) GetPassword() (password string, ok bool) {
 	return
 }
 
-func (id Id) SetPassword(password string) {
-	_, err := s_SetPass.Exec(password, id)
+func (id Id) SetPassword(password message.Param) {
+	pw := password.ToString()
+	_, err := s_SetPass.Exec(pw, id)
 	if err != nil {
 		panic(err)
 	}
@@ -65,8 +67,9 @@ func (id Id) GetNickname() (nickname string, ok bool) {
 	return
 }
 
-func (id Id) SetNickname(nickname string) {
-	_, err := s_SetNick.Exec(nickname, id)
+func (id Id) SetNickname(nickname message.Param) {
+	nn := nickname.ToString()
+	_, err := s_SetNick.Exec(nn, id)
 	if err != nil {
 		panic(err)
 	}
@@ -94,16 +97,19 @@ func (id Id) GetUsernameRealname() (username, realname string, ok bool) {
 	return
 }
 
-func (id Id) SetUsernameModeRealname(username, realname string, mode int) {
-	_, err := s_SetUserModeReal.Exec(username, mode, realname, id)
+func (id Id) SetUsernameModeRealname(username, realname message.Param, mode int) {
+	un := username.ToString()
+	rn := realname.ToString()
+	_, err := s_SetUserModeReal.Exec(un, mode, rn, id)
 	if err != nil {
 		panic(err)
 	}
 }
 
-func GetIdByNickname(nickname string) (id Id, ok bool) {
+func GetIdByNickname(nickname message.Param) (id Id, ok bool) {
 	ok = true
-	err := s_GetIdByNick.QueryRow(nickname).Scan(&id)
+	nn := nickname.ToString()
+	err := s_GetIdByNick.QueryRow(nn).Scan(&id)
 	if err == sql.ErrNoRows {
 		ok = false
 	} else if err != nil {

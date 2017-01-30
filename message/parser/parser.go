@@ -17,6 +17,7 @@ func (p *Parser) Parse() (*message.Message, error) {
 
 	// Check for message prefix
 	if tok, _ := p.scan(); tok == COLON {
+		p.unscan()
 		prefix, err := p.scanPrefix()
 		if err != nil {
 			return nil, err
@@ -49,47 +50,17 @@ func (p *Parser) Parse() (*message.Message, error) {
 	return &msg, nil
 }
 
-func (p *Parser) scanPrefix() (*message.Prefix, error) {
-	prefix := message.NewPrefix()
+func (p *Parser) scanPrefix() (message.Prefix, error) {
+	var prefix bytes.Buffer
 
-	serverName, err := p.scanServerName()
-	if err == nil {
-		prefix.ServerName = serverName
-		return &prefix, nil
-	} else if prefix.Nickname, err = p.scanNickname(); err == nil {
-		if prefix.User, prefix.Host, err = p.scanPrefixPrime(); err == nil {
-			return &prefix, nil
-		} else {
-			return nil, err
-		}
-	} else {
-		return nil, err
+	for tok, lit := p.scan(); tok != SPACE; {
+		prefix.WriteString(lit)
 	}
+
+	return message.Prefix(prefix.String()), nil
 }
 
-func (p *Parser) scanPrefixPrime() (user string, host *message.Host, err error) {
-	if tok, _ := p.scan(); tok == BANG {
-		if user, err = p.scanUser(); err != nil {
-			return "", nil, err
-		}
-	}
-
-	if host, err := p.scanPrefixPrimePrime(); err != nil {
-		return "", nil, err
-	} else {
-		return user, host, nil
-	}
-}
-
-func (p *Parser) scanPrefixPrimePrime() (*message.Host, error) {
-	if tok, _ := p.scan(); tok != AT {
-		p.unscan()
-		return nil, nil
-	}
-	return p.scanHost()
-}
-
-func (p *Parser) scanCommand() (string, error) {
+func (p *Parser) scanCommand() (message.Command, error) {
 	var command bytes.Buffer
 
 	if tok, lit := p.scan(); tok == DIGIT {
@@ -102,7 +73,7 @@ func (p *Parser) scanCommand() (string, error) {
 				return "", fmt.Errorf("Scanning command found %q, expected DIGIT", tok)
 			} else {
 				command.WriteString(lit)
-				return command.String(), nil
+				return message.Command(command.String()), nil
 			}
 		}
 	} else if tok == LETTER {
@@ -110,7 +81,7 @@ func (p *Parser) scanCommand() (string, error) {
 		for {
 			if tok, lit := p.scan(); tok != LETTER {
 				p.unscan()
-				return command.String(), nil
+				return message.Command(command.String()), nil
 			} else {
 				command.WriteString(lit)
 			}
@@ -120,31 +91,29 @@ func (p *Parser) scanCommand() (string, error) {
 	}
 }
 
-func (p *Parser) scanParams() (*message.Params, error) {
-	params := message.NewParams()
-	params.Num = 0
+func (p *Parser) scanParams() ([]message.Param, error) {
+	var params []message.Param
 
 	for i := 0; i < 15; i++ {
 		var param bytes.Buffer
 		if tok, _ := p.scan(); tok != SPACE {
 			p.unscan()
-			return &params, nil
+			return params, nil
 		}
 
 		if tok, lit := p.scan(); tok == COLON {
 			for {
 				if tok, lit := p.scan(); tok == CRLF {
 					p.unscan()
-					params.Others = append(params.Others, param.String())
-					params.Num++
-					return &params, nil
+					params = append(params, message.Param(param.String()))
+					return params, nil
 				} else {
 					param.WriteString(lit)
 				}
 			}
 		} else if tok == CRLF {
 			p.unscan()
-			return &params, nil
+			return params, nil
 		} else {
 			param.WriteString(lit)
 		}
@@ -152,8 +121,7 @@ func (p *Parser) scanParams() (*message.Params, error) {
 		for {
 			if tok, lit := p.scan(); tok == CRLF || tok == SPACE {
 				p.unscan()
-				params.Others = append(params.Others, param.String())
-				params.Num++
+				params = append(params, message.Param(param.String()))
 				break
 			} else {
 				param.WriteString(lit)
@@ -161,131 +129,7 @@ func (p *Parser) scanParams() (*message.Params, error) {
 		}
 	}
 
-	return &params, nil
-}
-
-func (p *Parser) scanServerName() (string, error) {
-	return p.scanHostName()
-}
-
-func (p *Parser) scanHost() (*message.Host, error) {
-	host := message.NewHost()
-
-	hostName, err := p.scanHostName()
-	if err == nil {
-		host.HostName = hostName
-		return &host, nil
-	} else {
-		hostAddr, err := p.scanHostAddr()
-		if err == nil {
-			host.HostAddr = hostAddr
-			return &host, nil
-		} else {
-			return nil, err
-		}
-	}
-}
-
-func (p *Parser) scanNickname() (string, error) {
-	var nick bytes.Buffer
-
-	if tok, lit := p.scan(); tok != LETTER && tok != SPECIAL {
-		return "", fmt.Errorf("Scanning nickname found %q, expected LETTER or SPECIAL", tok)
-	} else {
-		nick.WriteString(lit)
-	}
-
-	for i := 1; i < 9; i++ {
-		if tok, lit := p.scan(); tok != LETTER && tok != DIGIT && tok != DASH && tok != SPECIAL {
-			return "", fmt.Errorf("Scanning nickname found %q, expected LETTER, DIGIT, DASH, or SPECIAL", tok)
-		} else {
-			nick.WriteString(lit)
-		}
-	}
-	return nick.String(), nil
-}
-
-func (p *Parser) scanHostName() (string, error) {
-	var host bytes.Buffer
-
-	for {
-		if tok, lit := p.scan(); tok != LETTER && tok != DIGIT {
-			return "", fmt.Errorf("Scanning Hostname found %q, expected LETTER or DIGIT", tok)
-		} else {
-			host.WriteString(lit)
-		}
-
-		for {
-			tok, lit := p.scan()
-			if tok == PERIOD {
-				host.WriteString(lit)
-				break
-			} else if tok == LETTER || tok == DIGIT {
-				host.WriteString(lit)
-			} else if tok == DASH {
-				host.WriteString(lit)
-				if tok, lit = p.scan(); tok != LETTER && tok != DIGIT {
-					return "", fmt.Errorf("Scanning Hostname found %q, expected LETTER or DIGIT following DASH", tok)
-				} else {
-					host.WriteString(lit)
-				}
-			} else {
-				return host.String(), nil
-			}
-		}
-	}
-}
-
-// Only IPv4 implemented for now
-func (p *Parser) scanHostAddr() (string, error) {
-	var addr bytes.Buffer
-
-	for i := 0; i < 4; i++ {
-		if tok, lit := p.scan(); tok != DIGIT {
-			return "", fmt.Errorf("Scanning host address found %q, expected DIGIT", tok)
-		} else {
-			addr.WriteString(lit)
-		}
-
-		if tok, lit := p.scan(); tok == PERIOD {
-			addr.WriteString(lit)
-			continue
-		} else if tok == DIGIT {
-			addr.WriteString(lit)
-		} else {
-			return "", fmt.Errorf("Scanning host address found %q, expected DIGIT or PERIOD", tok)
-		}
-
-		if tok, lit := p.scan(); tok == PERIOD {
-			addr.WriteString(lit)
-			continue
-		} else if tok == DIGIT {
-			addr.WriteString(lit)
-		} else {
-			return "", fmt.Errorf("Scanning host address found %q, expected DIGIT or PERIOD", tok)
-		}
-	}
-
-	return addr.String(), nil
-}
-
-func (p *Parser) scanUser() (string, error) {
-	var user bytes.Buffer
-
-	if tok, lit := p.scan(); tok == SPACE || tok == AT || tok == CRLF {
-		return "", fmt.Errorf("Scanning User found %q, expected anything else", tok)
-	} else {
-		user.WriteString(lit)
-	}
-
-	for {
-		if tok, lit := p.scan(); tok == SPACE || tok == AT || tok == CRLF {
-			p.unscan()
-			return user.String(), nil
-		} else {
-			user.WriteString(lit)
-		}
-	}
+	return params, nil
 }
 
 type Parser struct {
